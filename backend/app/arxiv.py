@@ -1,6 +1,8 @@
 """arXiv ID parsing, metadata lookup and PDF download."""
 
+import html
 import itertools
+import logging
 import os
 import re
 import tempfile
@@ -8,11 +10,17 @@ import xml.etree.ElementTree as ET
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from html.parser import HTMLParser
 from pathlib import Path
 
 import httpx
 
+log = logging.getLogger(__name__)
+
+ABS_BASE = "https://arxiv.org/abs"
+ABS_TIMEOUT_S = 10
 EXPORT_API = "https://export.arxiv.org/api/query"
+EXPORT_TIMEOUT_S = 15
 PDF_BASE = "https://arxiv.org/pdf"
 USER_AGENT = "taste-reader/0.1 (personal research reader)"
 CHUNK = 256 * 1024
@@ -99,19 +107,71 @@ def parse_feed(xml: str, arxiv_id: str) -> Metadata:
     )
 
 
+def parse_abs_page(html_text: str, arxiv_id: str) -> Metadata:
+    """Metadata from an abstract page's `citation_*` meta tags (the ones Google Scholar reads)."""
+    meta = _MetaTags()
+    meta.feed(html_text)
+    title = meta.first("citation_title")
+    if not title:
+        raise ArxivError(f"arXiv abstract page for {arxiv_id} has no citation tags")
+    versions = [int(v) for v in re.findall(r"\[v(\d+)\]", html_text)]
+    subjects = re.search(r'class="tablecell subjects">(.*?)</td>', html_text, re.S)
+    date = meta.first("citation_date")
+    return Metadata(
+        arxiv_id=arxiv_id,
+        version=f"v{max(versions)}" if versions else None,
+        title=" ".join(title.split()),
+        # "Bahdanau, Dzmitry" -> "Dzmitry Bahdanau", as the export API gives them
+        authors=[" ".join(reversed([p.strip() for p in a.split(",", 1)])) for a in meta.all("citation_author")],
+        abstract=" ".join(meta.first("citation_abstract").split()),
+        categories=re.findall(r"\(([a-z\-]+(?:\.[A-Za-z\-]+)?)\)", subjects.group(1)) if subjects else [],
+        published_at=datetime.strptime(date, "%Y/%m/%d").replace(tzinfo=UTC) if date else None,
+    )
+
+
+class _MetaTags(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.tags: list[tuple[str, str]] = []
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag == "meta" and a.get("name") and a.get("content") is not None:
+            self.tags.append((a["name"], html.unescape(a["content"])))
+
+    def all(self, name: str) -> list[str]:
+        return [v for k, v in self.tags if k == name]
+
+    def first(self, name: str) -> str:
+        return next(iter(self.all(name)), "")
+
+
+def _get(url: str, timeout: float, **params) -> httpx.Response:
+    resp = httpx.get(url, params=params or None, headers={"User-Agent": USER_AGENT}, timeout=timeout,
+                     follow_redirects=True)
+    resp.raise_for_status()
+    return resp
+
+
 def fetch_metadata(arxiv_id: str) -> Metadata:
+    """Title, authors and so on, from the abstract page, or the export API if that fails.
+
+    The abstract page answers in milliseconds; the export API is rate limited and
+    can take tens of seconds or answer 429, so it is only the fallback.
+    """
     try:
-        resp = httpx.get(
-            EXPORT_API,
-            params={"id_list": arxiv_id},
-            headers={"User-Agent": USER_AGENT},
-            timeout=20,
-            follow_redirects=True,
-        )
-        resp.raise_for_status()
+        return parse_abs_page(_get(f"{ABS_BASE}/{arxiv_id}", ABS_TIMEOUT_S).text, arxiv_id)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            raise ArxivNotFound(arxiv_id) from e
+        first = e
+    except (httpx.HTTPError, ArxivError) as e:
+        first = e
+    log.warning("arXiv abstract page failed for %s (%s); trying the export API", arxiv_id, first)
+    try:
+        return parse_feed(_get(EXPORT_API, EXPORT_TIMEOUT_S, id_list=arxiv_id).text, arxiv_id)
     except httpx.HTTPError as e:
-        raise ArxivError(f"arXiv metadata request failed: {e}") from e
-    return parse_feed(resp.text, arxiv_id)
+        raise ArxivError(f"arXiv didn't answer ({first}; export API: {e}). Try again in a minute.") from e
 
 
 def stream_pdf(arxiv_id: str, version: str | None, dest: Path) -> tuple[int | None, Iterator[bytes]]:

@@ -24,11 +24,62 @@ export interface Paper {
   status_source: "auto" | "manual";
   rating: number | null;
   rating_prompted: boolean;
+  feedback_state: FeedbackState;
+  source: DiscoverySource | null;
   added_at: string;
   last_opened_at: string | null;
   tags: string[];
   metrics: Metrics;
   abstract?: string;
+}
+
+/** none: opened before questions existed; pending: waiting for answers. */
+export type FeedbackState = "none" | "pending" | "done" | "skipped";
+export const LEVELS = ["too_basic", "just_right", "too_advanced"] as const;
+export const REASONS = ["off_topic", "poorly_written", "not_now", "great_method", "great_idea"] as const;
+
+export interface Answers {
+  interest?: number | null;
+  value?: number | null;
+  novelty?: number | null;
+  level?: (typeof LEVELS)[number] | null;
+  reasons?: (typeof REASONS)[number][];
+  skipped?: "skip" | "didnt_read";
+  context: "after_reading" | "next_visit";
+  shown_ms: number;
+}
+
+/** Where the user found a paper they added. Asked, optional. */
+export const DISCOVERY_SOURCES = ["colleague", "social", "search", "citation", "feed", "other"] as const;
+export type DiscoverySource = (typeof DISCOVERY_SOURCES)[number];
+
+/** How a reading session started. Reload, history and typed URLs are all "direct". */
+export type Via =
+  | { kind: "library"; slate_id: string; position: number }
+  | { kind: "pasted" | "direct" | "resume" };
+
+/** Sent when a session opens; the server keeps whatever parts are valid. */
+export interface SessionContext {
+  via: Via;
+  device: "phone" | "tablet" | "desktop";
+  viewport: [number, number];
+  screen: [number, number];
+  dpr: number;
+  local_hour: number;
+  weekday: number; // 1 = Monday
+  tz: string;
+  tz_offset_min: number;
+}
+
+/** Bump with the backend's SCHEMA_VERSION when event shapes or meanings change. */
+export const SCHEMA_VERSION = 3;
+
+/** The thresholds stamped on each client event, so old events stay interpretable. */
+export type EventConfig = Pick<ClientConfig, "idle_cutoff_s" | "return_visit_gap_min" | "page_viewed_min_s" | "auto_read_threshold">;
+
+export function eventConfig(c: ClientConfig): EventConfig {
+  const { idle_cutoff_s, return_visit_gap_min, page_viewed_min_s, auto_read_threshold } = c;
+  return { idle_cutoff_s, return_visit_gap_min, page_viewed_min_s, auto_read_threshold };
 }
 
 export interface ClientConfig {
@@ -56,11 +107,13 @@ export interface AdminUser extends User {
 
 export interface ClientEvent {
   event_id: string;
-  type: "page_dwell" | "paper_closed";
+  type: "page_dwell" | "paper_closed" | "text_copied" | "zoom_changed" | "impression";
   arxiv_id: string;
-  session_id: string;
+  session_id: string | null; // null only for impressions
   ts: string;
   payload: Record<string, unknown>;
+  schema_version: number;
+  config: EventConfig;
 }
 
 export interface EventType {
@@ -111,6 +164,8 @@ export interface StoredEvent {
   session_id: string | null;
   ts: string;
   payload: Record<string, unknown>;
+  schema_version: number;
+  config: Record<string, number> | null;
   reported_at: string | null;
 }
 
@@ -136,6 +191,9 @@ export interface PaperReading {
   status: Status;
   status_source: "auto" | "manual";
   rating: number | null;
+  feedback_state: FeedbackState;
+  feedback: Answers | null;
+  source: DiscoverySource | null;
   num_pages: number | null;
   total_ms: number;
   visits: number;
@@ -191,19 +249,22 @@ export const api = {
   },
   listPapers: (params: URLSearchParams) => request<Paper[]>(`/api/papers?${params}`),
   getPaper: (key: string) => request<Paper>(`/api/papers/${key}`),
-  addPaper: (input: string) => request<Paper>("/api/papers", { method: "POST", body: JSON.stringify({ input }) }),
+  addPaper: (input: string, source: DiscoverySource | null) => request<Paper>("/api/papers", post({ input, source })),
   updatePaper: (
     key: string,
     body: Partial<{ status: Status; rating: number | null; prompted: boolean; rating_prompted: boolean; num_pages: number }>,
   ) => request<Paper>(`/api/papers/${key}`, { method: "PATCH", body: JSON.stringify(body) }),
-  openSession: (key: string) =>
-    request<{ session_id: string; is_return_visit: boolean; paper: Paper }>(`/api/papers/${key}/sessions`, {
-      method: "POST",
-    }),
+  openSession: (key: string, context: SessionContext) =>
+    request<{ session_id: string; is_return_visit: boolean; paper: Paper }>(
+      `/api/papers/${key}/sessions`,
+      post({ context }),
+    ),
   addTag: (key: string, tag: string) => request<Paper>(tagPath(key, tag), { method: "PUT" }),
   removeTag: (key: string, tag: string) => request<Paper>(tagPath(key, tag), { method: "DELETE" }),
   listTags: () => request<{ name: string; count: number }[]>("/api/tags"),
   pdfUrl: (key: string) => `/api/papers/${key}/pdf`,
+  pendingFeedback: () => request<Paper[]>("/api/feedback/pending"),
+  answer: (key: string, body: Answers) => request<Paper>(`/api/papers/${key}/feedback`, post(body)),
   admin: {
     users: () => request<AdminUser[]>("/api/admin/users"),
     overview: (params: URLSearchParams) => request<Overview>(`/api/admin/overview?${params}`),

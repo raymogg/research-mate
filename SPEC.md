@@ -46,9 +46,10 @@ This is the observation layer for the wider research-taste project. Later, these
 ### 4.1 Add a paper
 
 1. Paste any of these into the add box: `https://arxiv.org/abs/2401.12345`, `https://arxiv.org/pdf/2401.12345v2`, `2401.12345`, `cs/0101001`.
-2. The app normalises the input to an arXiv ID. Invalid input shows an inline error.
-3. If the paper is new, the backend fetches metadata from the arXiv export API and saves it with status *Unread*. If it already exists, nothing is duplicated.
-4. The reader opens.
+2. While there is text in the box, an optional row asks "Where did you find it?": a colleague, social media, search, a citation, a newsletter or feed, somewhere else. One tap, never required. It is saved as `papers.source` and in `paper_added`. An answer given when re-pasting a paper fills in a missing source but never replaces one.
+3. The app normalises the input to an arXiv ID. Invalid input shows an inline error.
+4. If the paper is new, the backend fetches metadata (the arXiv abstract page, falling back to the export API) and saves it with status *Unread*. If it already exists, nothing is duplicated.
+5. The reader opens.
 
 ### 4.2 Read a paper
 
@@ -58,6 +59,8 @@ This is the observation layer for the wider research-taste project. Later, these
 4. A page counts as **viewed** once it has ≥ 5 s of cumulative active time.
 5. When viewed pages / total pages ≥ 0.8 and the status is not already *Read*, the status becomes *Read* (`source: "auto"`) and the rating prompt appears (§4.4).
 6. Closing the reader, navigating away or hiding the tab ends or pauses the session and flushes events.
+7. Each session records its context (`paper_opened.context`, `sessions.context`): how it started (`via`: `library` with the slate id and position clicked, `pasted`, `direct` for typed URLs, reloads and history, `resume` for a later session on the same page), device class, viewport and screen size, pixel ratio, local hour, weekday, time zone. Invalid context is dropped; it never stops a session.
+8. The zoom buttons emit `zoom_changed`. Browser zoom and pinch are not captured.
 
 ### 4.3 Manage the library
 
@@ -65,12 +68,20 @@ This is the observation layer for the wider research-taste project. Later, these
 - Each row shows: title, first author + "et al.", arXiv ID, status, rating, tags, total read time, visits, pages viewed (e.g. `14/20`).
 - Filter by status, by tag (one or more), and by rating (e.g. ≥ 4).
 - Edit status, rating and tags inline. Tag input autocompletes from existing tags.
+- **Impressions.** Each load of the list is a *slate* with its own id. When at least half of a row has been on screen for 1 s with the tab visible, the browser emits one `impression` for that paper in that slate: position, slate size, sort and filters, the policy that ordered it (`library:<sort>`), purpose `library`, propensity 1. Opening a paper from the list passes the slate id and position into the session's context, so every impression can be labelled opened or not. Recommender lists (`list: suggested`) will use the same event with their model version, score, purpose (`exploit`, `explore`, `elicit`, `curriculum`) and real propensity.
 
 ### 4.4 Rate a paper
 
 - A 1–5 star control is always visible in the reader toolbar and on each library row. Clicking the current value clears it.
 - When a paper is auto-marked *Read*, a small non-blocking prompt ("How useful was this paper?") appears in the reader. It can be dismissed and does not reappear for that paper.
 - Every change emits a `rating_set` event, including clears (`to: null`).
+
+### 4.5 Questions after the first visit
+
+- Opening a paper for the first time marks it `feedback_state = pending`.
+- On leaving the reader, a dialog asks: how interesting (1–5), how valuable (1–5), how novel (1–5), level (too basic / just right / too advanced), and optional chips (off-topic for me, poorly written, not now, great method, great idea). Any subset can be answered.
+- If the tab was closed instead, the dialog appears on the next page load anywhere on the site (except that paper's own reader). Several pending papers are asked one after another.
+- *Skip*, Escape and *I didn't really read it* dismiss it for good (`feedback_skipped`). Answers emit `paper_feedback`. Papers first opened before this existed are never asked.
 
 ## 5. Statuses
 
@@ -128,6 +139,8 @@ papers                            -- one row per paper per user's library
   status_source   TEXT            -- auto|manual
   rating          INTEGER NULL    -- 1..5
   rating_prompted BOOLEAN         -- prompt already shown
+  feedback_state  TEXT            -- none|pending|done|skipped (§4.5)
+  source          TEXT NULL       -- where they found it: colleague|social|search|citation|feed|other (§4.1)
   added_at        TIMESTAMP
   last_opened_at  TIMESTAMP NULL
 
@@ -146,6 +159,7 @@ sessions
   ended_at        TIMESTAMP NULL
   active_ms       INTEGER
   is_return_visit BOOLEAN
+  context         JSON NULL       -- how it started and on what screen (§4.2); null before v3
 
 events
   event_id        TEXT PK         -- UUID, created by the client (idempotency key)
@@ -155,6 +169,8 @@ events
   type            TEXT
   ts              TIMESTAMP
   payload         JSON
+  schema_version  INTEGER         -- SCHEMA_VERSION in models.py; 1 for rows from before versioning
+  config          JSON NULL       -- thresholds in force: idle_cutoff_s, return_visit_gap_min, page_viewed_min_s, auto_read_threshold
   reported_at     TIMESTAMP NULL  -- set when the feedback stub accepts it
 ```
 
@@ -164,10 +180,15 @@ Raw events are immutable and kept forever, so reward functions can be recomputed
 
 | Type | Payload | Emitted when |
 |---|---|---|
-| `paper_added` | `{ input }` | A new paper is saved |
-| `paper_opened` | `{ is_return_visit }` | A session starts |
+| `paper_added` | `{ input, source }` | A new paper is saved |
+| `paper_opened` | `{ is_return_visit, context }` | A session starts; `context` as in §4.2 |
+| `impression` | `{ list, slate_id, position, slate_size, filters, policy, purpose, score, propensity }` | A paper's row was on screen (§4.3). The only client event with no session |
+| `zoom_changed` | `{ from, to, page }` | Zoom buttons used; 1 = fit width |
 | `paper_closed` | `{ active_ms }` | A session ends |
-| `page_dwell` | `{ page, active_ms }` | Focus leaves a page, or on flush with time pending |
+| `page_dwell` | `{ page, active_ms, band_ms }` | Focus leaves a page, or on flush with time pending. `band_ms` is 10 numbers: active ms each tenth of the page (top to bottom) was on screen |
+| `text_copied` | `{ page, chars }` | Text copied from the PDF's text layer. Length only, never the text |
+| `paper_feedback` | `{ interest, value, novelty, level, reasons, context, shown_ms }` | Questions answered (§4.5); `context` is `after_reading` or `next_visit` |
+| `feedback_skipped` | `{ why, context, shown_ms }` | Questions dismissed; `why` is `skip` or `didnt_read` |
 | `status_changed` | `{ from, to, source }` | Any status change; `source` is `auto` or `manual` |
 | `completion_reached` | `{ pages_viewed, num_pages }` | The ≥ 80% threshold is crossed (once per paper) |
 | `rating_set` | `{ from, to, prompted }` | Rating set, changed or cleared; `prompted` is true if set from the prompt |
@@ -182,9 +203,13 @@ Every event shares this envelope:
   "arxiv_id": "2401.12345",
   "session_id": "b3f0…",
   "ts": "2026-10-30T09:14:02Z",
-  "payload": { "page": 4, "active_ms": 81250 }
+  "payload": { "page": 4, "active_ms": 81250, "band_ms": [81250, 81250, 60000, 40000, 0, 0, 0, 0, 0, 0] },
+  "schema_version": 3,
+  "config": { "idle_cutoff_s": 60, "return_visit_gap_min": 30, "page_viewed_min_s": 5, "auto_read_threshold": 0.8 }
 }
 ```
+
+Client events carry the thresholds the browser loaded; server events carry the server's. Bump `SCHEMA_VERSION` (backend `models.py` and frontend `api.ts`) whenever an event's shape or meaning changes, and note the change beside it.
 
 ### Delivery
 
@@ -198,14 +223,17 @@ Every event shares this envelope:
 
 | Method and path | Purpose |
 |---|---|
-| `POST /api/papers` | Body `{ input }`. Add by URL or ID; returns the paper (200 if it already exists, 201 if new) |
+| `POST /api/papers` | Body `{ input, source? }`. Add by URL or ID; returns the paper (200 if it already exists, 201 if new) |
 | `GET /api/papers?status=&tag=&min_rating=&sort=` | List papers with their metrics |
 | `GET /api/papers/{id}` | One paper with metrics and per-page dwell |
 | `PATCH /api/papers/{id}` | Body `{ status?, rating? }`. Manual updates (emit events server-side) |
+| `POST /api/papers/{id}/sessions` | Body `{ context? }` (§4.2). Start a reading session; returns its id |
 | `GET /api/papers/{id}/pdf` | PDF proxied from arXiv and cached on disk |
 | `PUT /api/papers/{id}/tags/{tag}` / `DELETE …` | Add or remove a tag |
 | `GET /api/tags` | All tags with counts, for autocomplete |
 | `POST /api/events` | Body `{ events: [...] }`. Client event batch |
+| `GET /api/feedback/pending` | Papers waiting for post-visit answers, most recently opened first |
+| `POST /api/papers/{id}/feedback` | Body `{ interest?, value?, novelty?, level?, reasons?, skipped?, context, shown_ms }`. Answer or skip (409 if already done) |
 | `POST /api/auth/signup` | Body `{ username, password, invite_code }`. Creates an account and signs in |
 | `POST /api/auth/login` / `logout`, `GET /api/auth/me` | Session cookie `taste_login` |
 | `GET /api/admin/...` | Admins only: `users`, `overview`, `events`, `sessions`, `papers`; `?user_id=` scopes to one user |
@@ -245,7 +273,7 @@ The browser talks only to our backend. arXiv PDFs can't be loaded cross-origin, 
 
 - **Frontend:** React, Vite, TypeScript. `pdfjs-dist` for rendering, `IntersectionObserver` for the page in view, the Page Visibility API for pausing.
 - **Backend:** Python 3.12, FastAPI, SQLModel on SQLite, `httpx` for arXiv. Python keeps it next to the future PyTorch/LoRA code.
-- **Stub:** a router in the same FastAPI app. `FEEDBACK_URL` defaults to `http://localhost:8000/feedback/events`.
+- **Stub:** a router in the same FastAPI app. `FEEDBACK_URL` defaults to `http://127.0.0.1:8000/feedback/events`.
 - **Packaging:** one multi-stage Docker image. Node builds the frontend; FastAPI serves the static build and the API on port 8000. Data (`app.db`, `pdfs/`, `feedback.log`) lives in `/data`, mounted as a volume.
 
 ### Proposed layout
@@ -285,7 +313,7 @@ research-taste-project/
 | `PAGE_VIEWED_MIN_S` | 5 | Active time for a page to count as viewed |
 | `AUTO_READ_THRESHOLD` | 0.8 | Fraction of pages viewed that triggers auto *Read* |
 | `FLUSH_INTERVAL_S` | 15 | Client event flush interval |
-| `FEEDBACK_URL` | `http://localhost:8000/feedback/events` | Where events are forwarded |
+| `FEEDBACK_URL` | `http://127.0.0.1:8000/feedback/events` | Where events are forwarded |
 | `DATA_DIR` | `./data` (`/data` in Docker) | SQLite db, PDF cache, `feedback.log` |
 | `INVITE_CODE` | empty (`dev` via `make dev`) | Code required to sign up; empty closes sign-up |
 | `COOKIE_SECURE` | `0` | `1` sends the login cookie over HTTPS only (production) |

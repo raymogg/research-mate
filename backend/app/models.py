@@ -6,6 +6,23 @@ from sqlmodel import Field, SQLModel
 
 STATUSES = ("unread", "reading", "read", "skimmed", "abandoned")
 
+# Bump when the meaning or shape of any event changes, and note what changed:
+#   1: original events (rows from before versioning)
+#   2: every event records the thresholds in force (`config`); page_dwell adds
+#      `band_ms`; new types text_copied, paper_feedback, feedback_skipped
+#   3: new types impression (no session) and zoom_changed; paper_added adds
+#      `source`; paper_opened adds `context` (how the user got there, device,
+#      viewport, local time)
+SCHEMA_VERSION = 3
+
+# none: never asked (papers first opened before feedback existed);
+# pending: opened once, waiting for answers; done / skipped: asked
+FEEDBACK_STATES = ("none", "pending", "done", "skipped")
+
+# Where the user found a paper they added (asked, optional). "suggested" is
+# reserved for papers our own recommender puts in the library.
+DISCOVERY_SOURCES = ("colleague", "social", "search", "citation", "feed", "other")
+
 
 def utcnow() -> datetime:
     return datetime.now(UTC)
@@ -55,6 +72,8 @@ class Paper(SQLModel, table=True):
     status_source: str = "auto"
     rating: int | None = None
     rating_prompted: bool = False
+    feedback_state: str = Field(default="none", sa_column_kwargs={"server_default": "none"})
+    source: str | None = None  # one of DISCOVERY_SOURCES, or None if not given (v3+)
     added_at: datetime = Field(default_factory=utcnow)
     last_opened_at: datetime | None = None
 
@@ -78,6 +97,8 @@ class ReadingSession(SQLModel, table=True):
     ended_at: datetime | None = None
     active_ms: int = 0
     is_return_visit: bool = False
+    # How the session started and on what screen; see SessionContext. None before v3.
+    context: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
 
 
 class Event(SQLModel, table=True):
@@ -90,4 +111,8 @@ class Event(SQLModel, table=True):
     type: str = Field(index=True)
     ts: datetime
     payload: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    schema_version: int = Field(default=SCHEMA_VERSION, sa_column_kwargs={"server_default": "1"})
+    # Thresholds that shaped this event (idle cutoff, viewed-page minimum, ...), so
+    # old events stay interpretable after the settings change. None before v2.
+    config: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     reported_at: datetime | None = Field(default=None, index=True)

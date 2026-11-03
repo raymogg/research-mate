@@ -6,10 +6,10 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
-from .. import arxiv, metrics
+from .. import arxiv, events, metrics
 from ..auth import current_user
 from ..db import get_db
-from ..models import STATUSES, Paper, PaperTag, User, iso
+from ..models import DISCOVERY_SOURCES, STATUSES, Paper, PaperTag, User, iso
 from .common import schedule_forward
 
 router = APIRouter(prefix="/api")
@@ -30,6 +30,8 @@ def serialize(paper: Paper, tags: list[str], r: metrics.Rollup, min_s: int, deta
         "status_source": paper.status_source,
         "rating": paper.rating,
         "rating_prompted": paper.rating_prompted,
+        "feedback_state": paper.feedback_state,
+        "source": paper.source,
         "added_at": iso(paper.added_at),
         "last_opened_at": iso(paper.last_opened_at),
         "tags": sorted(tags),
@@ -73,6 +75,7 @@ def get_paper(db: Session, user: User, key: str) -> Paper:
 
 class AddPaper(BaseModel):
     input: str = Field(min_length=1, max_length=500)
+    source: Literal[DISCOVERY_SOURCES] | None = None  # where they found it, if they said
 
 
 @router.post("/papers")
@@ -88,6 +91,10 @@ def add_paper(
     if parsed is None:
         raise HTTPException(400, "Not an arXiv link or ID. Try e.g. https://arxiv.org/abs/2401.12345")
     if existing := db.get(Paper, (user.id, parsed.arxiv_id)):
+        if body.source and existing.source is None:
+            existing.source = body.source
+            db.add(existing)
+            db.commit()
         return paper_out(request, db, existing)
     # Someone else already has it: reuse their metadata instead of asking arXiv again.
     if known := db.exec(select(Paper).where(Paper.arxiv_id == parsed.arxiv_id)).first():
@@ -115,8 +122,9 @@ def add_paper(
             categories=meta.categories,
             published_at=meta.published_at,
         )
+    paper.source = body.source
     db.add(paper)
-    metrics.record_event(db, user.id, paper.arxiv_id, "paper_added", {"input": body.input})
+    metrics.record_event(db, user.id, paper.arxiv_id, "paper_added", {"input": body.input, "source": body.source})
     db.commit()
     schedule_forward(background, request)
     response.status_code = 201
@@ -207,16 +215,22 @@ def update_paper(
     return paper_out(request, db, paper)
 
 
+class OpenSession(BaseModel):
+    context: dict | None = None  # see events.SessionContext; checked leniently
+
+
 @router.post("/papers/{key}/sessions", status_code=201)
 def open_session(
     key: str,
     request: Request,
     background: BackgroundTasks,
+    body: OpenSession | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(current_user),
 ):
     paper = get_paper(db, user, key)
-    session = metrics.start_session(db, request.app.state.settings, paper)
+    context = events.session_context(body.context if body else None)
+    session = metrics.start_session(db, request.app.state.settings, paper, context)
     db.add(paper)
     db.commit()
     schedule_forward(background, request)

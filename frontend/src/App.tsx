@@ -5,6 +5,7 @@ import { Admin } from "./pages/Admin";
 import { Library } from "./pages/Library";
 import { Login } from "./pages/Login";
 import { Reader } from "./pages/Reader";
+import { PaperQuestions } from "./components/PaperQuestions";
 import { EventBuffer } from "./tracking/eventBuffer";
 
 interface AppContext {
@@ -62,6 +63,7 @@ export function App() {
   return (
     <Ctx.Provider value={{ ...base, user, signOut }}>
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <PaperQuestions />
         <Routes>
           <Route path="/" element={<Library />} />
           <Route path="/paper/:key" element={<Reader />} />

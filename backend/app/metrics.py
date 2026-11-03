@@ -101,8 +101,13 @@ def record_event(
     session_id: str | None = None,
     ts: datetime | None = None,
     event_id: str | None = None,
+    config: dict | None = None,
 ) -> Event | None:
-    """Store one event. Returns None if `event_id` was already stored."""
+    """Store one event. Returns None if `event_id` was already stored.
+
+    `config` is the thresholds the event was produced under; it defaults to the
+    server's current ones.
+    """
     event_id = event_id or str(uuid4())
     if db.get(Event, event_id) is not None:
         return None
@@ -114,6 +119,7 @@ def record_event(
         payload=payload,
         session_id=session_id,
         ts=ts or utcnow(),
+        config=config or db.info.get("event_config"),
     )
     db.add(event)
     return event
@@ -148,7 +154,7 @@ def last_activity(db: Session, user_id: int, arxiv_id: str) -> datetime | None:
     return max((t for t in (last_event, last_end) if t is not None), default=None)
 
 
-def start_session(db: Session, settings: Settings, paper: Paper) -> ReadingSession:
+def start_session(db: Session, settings: Settings, paper: Paper, context: dict | None = None) -> ReadingSession:
     now = utcnow()
     last = last_activity(db, paper.user_id, paper.arxiv_id)
     is_return = last is not None and now - last >= timedelta(minutes=settings.return_visit_gap_min)
@@ -158,12 +164,21 @@ def start_session(db: Session, settings: Settings, paper: Paper) -> ReadingSessi
         arxiv_id=paper.arxiv_id,
         started_at=now,
         is_return_visit=is_return,
+        context=context,
     )
     db.add(session)
     record_event(
-        db, paper.user_id, paper.arxiv_id, "paper_opened", {"is_return_visit": is_return}, session.session_id, now
+        db,
+        paper.user_id,
+        paper.arxiv_id,
+        "paper_opened",
+        {"is_return_visit": is_return, "context": context},
+        session.session_id,
+        now,
     )
     paper.last_opened_at = now
+    if last is None and paper.feedback_state == "none":
+        paper.feedback_state = "pending"  # first visit: ask about it once they leave
     set_status(db, paper, "reading", "auto")
     return session
 

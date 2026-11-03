@@ -131,6 +131,8 @@ def event_row(e: Event, titles: dict[str, str], names: dict[int, str]) -> dict:
         "session_id": e.session_id,
         "ts": iso(e.ts),
         "payload": e.payload,
+        "schema_version": e.schema_version,
+        "config": e.config,
         "reported_at": iso(e.reported_at),
     }
 
@@ -193,14 +195,74 @@ def sessions(db: Session, user_id: int | None = None, arxiv_id: str | None = Non
             "is_return_visit": s.is_return_visit,
             "events": event_counts.get(s.session_id, 0),
             "pages_touched": pages.get(s.session_id, 0),
+            **context_columns(s.context),
         }
         for s in rows
     ]
 
 
+def context_columns(context: dict | None) -> dict:
+    """A session's context as flat columns, blank when not recorded."""
+    c = context or {}
+    via = c.get("via") or {}
+    viewport = c.get("viewport") or (None, None)
+    return {
+        "via": via.get("kind"),
+        "via_slate_id": via.get("slate_id"),
+        "via_position": via.get("position"),
+        "device": c.get("device"),
+        "viewport_w": viewport[0],
+        "viewport_h": viewport[1],
+        "dpr": c.get("dpr"),
+        "local_hour": c.get("local_hour"),
+        "weekday": c.get("weekday"),
+        "tz": c.get("tz"),
+    }
+
+
+def impressions(db: Session, user_id: int | None = None) -> list[dict]:
+    """Every impression, with the session it led to if the paper was opened from that slate."""
+    q = select(Event).where(Event.type == "impression").order_by(Event.ts)
+    if user_id is not None:
+        q = q.where(Event.user_id == user_id)
+    opened: dict[tuple[int, str, str], str] = {}
+    for s in db.exec(select(ReadingSession).where(col(ReadingSession.context).is_not(None))):
+        slate = ((s.context or {}).get("via") or {}).get("slate_id")
+        if slate:
+            opened.setdefault((s.user_id, slate, s.arxiv_id), s.session_id)
+    out = []
+    for e in db.exec(q):
+        p = e.payload
+        out.append({
+            "user_id": e.user_id,
+            "arxiv_id": e.arxiv_id,
+            "ts": iso(e.ts),
+            "list": p.get("list"),
+            "slate_id": p.get("slate_id"),
+            "position": p.get("position"),
+            "slate_size": p.get("slate_size"),
+            "policy": p.get("policy"),
+            "purpose": p.get("purpose"),
+            "score": p.get("score"),
+            "propensity": p.get("propensity"),
+            "filters": p.get("filters"),
+            "opened_session_id": opened.get((e.user_id, p.get("slate_id"), e.arxiv_id)),
+        })
+    return out
+
+
+def answers(db: Session, user_id: int | None = None) -> dict[tuple[int, str], dict]:
+    """The post-visit answers for each (user, paper) that has them."""
+    q = select(Event).where(Event.type == "paper_feedback").order_by(Event.ts)
+    if user_id is not None:
+        q = q.where(Event.user_id == user_id)
+    return {(e.user_id, e.arxiv_id): e.payload for e in db.exec(q)}
+
+
 def reading_by_paper(db: Session, settings: Settings, user_id: int | None = None) -> list[dict]:
     """Each (user, paper) with its full per-page dwell, most read first."""
     rolls = metrics.rollups(db, user_id)
+    given = answers(db, user_id)
     names = _usernames(db)
     q = select(Paper)
     if user_id is not None:
@@ -217,6 +279,9 @@ def reading_by_paper(db: Session, settings: Settings, user_id: int | None = None
                 "status": p.status,
                 "status_source": p.status_source,
                 "rating": p.rating,
+                "feedback_state": p.feedback_state,
+                "feedback": given.get((p.user_id, p.arxiv_id)),
+                "source": p.source,
                 "num_pages": p.num_pages,
                 "total_ms": r.total_ms(),
                 "visits": r.visits,

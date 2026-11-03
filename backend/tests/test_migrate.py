@@ -38,6 +38,8 @@ def test_v1_database_moves_to_owner(tmp_path):
         assert owner.username == "owner" and owner.is_admin and owner.id == 1
         paper = db.get(Paper, (1, "2106.09685"))
         assert paper.rating == 4 and paper.num_pages == 26
+        assert paper.feedback_state == "none"  # opened before the post-visit questions existed
+        assert db.get(Event, "e1").schema_version == 1
         assert db.get(PaperTag, (1, "2106.09685", "peft"))
         assert db.get(ReadingSession, "s1").user_id == 1
         event = db.get(Event, "e1")

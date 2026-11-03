@@ -7,6 +7,10 @@ def _env(name: str, default: str) -> str:
     return os.environ.get(name, default)
 
 
+# Settings that change what an event means. Stamped on each event.
+EVENT_CONFIG_KEYS = ("idle_cutoff_s", "return_visit_gap_min", "page_viewed_min_s", "auto_read_threshold")
+
+
 @dataclass
 class Settings:
     idle_cutoff_s: int = field(default_factory=lambda: int(_env("IDLE_CUTOFF_S", "60")))
@@ -15,7 +19,7 @@ class Settings:
     auto_read_threshold: float = field(default_factory=lambda: float(_env("AUTO_READ_THRESHOLD", "0.8")))
     flush_interval_s: int = field(default_factory=lambda: int(_env("FLUSH_INTERVAL_S", "15")))
     feedback_url: str = field(
-        default_factory=lambda: _env("FEEDBACK_URL", "http://localhost:8000/feedback/events")
+        default_factory=lambda: _env("FEEDBACK_URL", "http://127.0.0.1:8000/feedback/events")
     )
     data_dir: Path = field(default_factory=lambda: Path(_env("DATA_DIR", "./data")))
     static_dir: Path = field(default_factory=lambda: Path(_env("STATIC_DIR", "./static")))
@@ -36,6 +40,10 @@ class Settings:
     @property
     def feedback_log(self) -> Path:
         return self.data_dir / "feedback.log"
+
+    def event_config(self) -> dict:
+        """The thresholds stamped on every event (see `Event.config`)."""
+        return {k: getattr(self, k) for k in EVENT_CONFIG_KEYS}
 
     def client_config(self) -> dict:
         """Thresholds the browser needs; served so there is one source of truth."""

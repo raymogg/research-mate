@@ -73,3 +73,79 @@ def test_parse_feed_not_found(xml):
     with pytest.raises(ArxivNotFound):
         parse_feed(xml, "9999.99999")
 
+
+
+def test_parse_id_strips_tracking_parameters():
+    url = ("https://arxiv.org/abs/1409.0473?fbclid=IwY2xjawVWRuBleHRuA2FlbQIxMQBwZG9mA3NydGMGYXBwX2lkATAAAR"
+           "-Q9uI-sSo0vUgbNr-R-cO--SmhWfaX5Lpwf2AsRH6Ki569afQbsAOYXXrliQ_aem_aKgV7k3J1MqVq5VaZLywyA")
+    assert parse_id(url).arxiv_id == "1409.0473"
+    assert parse_id("arxiv.org/pdf/1409.0473v2.pdf?utm_source=x#page=3").version == "v2"
+
+
+ABS_PAGE = """<html><head>
+<meta name="citation_title" content="Neural Machine Translation by Jointly
+  Learning to Align and Translate" />
+<meta name="citation_author" content="Bahdanau, Dzmitry" />
+<meta name="citation_author" content="Cho, Kyunghyun" />
+<meta name="citation_date" content="2014/09/01" />
+<meta name="citation_abstract" content="Neural machine translation &amp; more." />
+</head><body>
+<td class="tablecell subjects"><span class="primary-subject">Computation and Language (cs.CL)</span>;
+ Machine Learning (cs.LG); Machine Learning (stat.ML)</td>
+<strong>[v1]</strong> Mon, 1 Sep 2014 <strong>[v7]</strong> Thu, 19 May 2016
+</body></html>"""
+
+
+def test_parse_abs_page():
+    from app.arxiv import parse_abs_page
+
+    m = parse_abs_page(ABS_PAGE, "1409.0473")
+    assert m.title == "Neural Machine Translation by Jointly Learning to Align and Translate"
+    assert m.authors == ["Dzmitry Bahdanau", "Kyunghyun Cho"]
+    assert m.abstract == "Neural machine translation & more."
+    assert m.categories == ["cs.CL", "cs.LG", "stat.ML"]
+    assert m.version == "v7"
+    assert m.published_at.year == 2014
+
+
+def _response(url, status, text=""):
+    import httpx
+
+    return httpx.Response(status, text=text, request=httpx.Request("GET", url))
+
+
+def test_fetch_falls_back_to_export_api(monkeypatch):
+    import httpx
+
+
+    calls = []
+
+    def fake_get(url, timeout, **params):
+        calls.append(url)
+        if url.startswith(arxiv.ABS_BASE):
+            raise httpx.ReadTimeout("slow")
+        return _response(url, 200, FEED)
+
+    monkeypatch.setattr(arxiv, "_get", fake_get)
+    assert arxiv.fetch_metadata("1706.03762").title.startswith("Attention")
+    assert calls == [f"{arxiv.ABS_BASE}/1706.03762", arxiv.EXPORT_API]
+
+
+def test_fetch_unknown_id_and_both_down(monkeypatch):
+
+
+    def missing(url, timeout, **params):
+        resp = _response(url, 404)
+        resp.raise_for_status()
+
+    monkeypatch.setattr(arxiv, "_get", missing)
+    with pytest.raises(ArxivNotFound):
+        arxiv.fetch_metadata("2501.99999")
+
+    def limited(url, timeout, **params):
+        resp = _response(url, 429)
+        resp.raise_for_status()
+
+    monkeypatch.setattr(arxiv, "_get", limited)
+    with pytest.raises(arxiv.ArxivError, match="Try again in a minute"):
+        arxiv.fetch_metadata("1409.0473")

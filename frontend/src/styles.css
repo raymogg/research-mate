@@ -6,6 +6,7 @@
   --border: #e7e5e4;
   --accent: #2563eb;
   --accent-soft: #eff6ff;
+  --on-accent: #ffffff;
   --star: #f59e0b;
   --error: #b91c1c;
   --pdf-bg: #e7e5e4;
@@ -24,6 +25,7 @@
     --border: #3a3633;
     --accent: #60a5fa;
     --accent-soft: #1e293b;
+    --on-accent: #0f172a;
     --error: #f87171;
     --pdf-bg: #12100f;
     color-scheme: dark;
@@ -63,10 +65,12 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
   border: none;
   border-radius: 6px;
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
   font-weight: 600;
 }
 .add-form button:disabled { opacity: 0.5; cursor: default; }
+.source-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 8px; }
+.source-row .chip { font-size: 13px; padding: 3px 10px; }
 
 .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 12px; }
 .filters label { display: flex; align-items: center; gap: 6px; color: var(--muted); }
@@ -140,12 +144,27 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
 .pdf-scroll { flex: 1; overflow: auto; background: var(--pdf-bg); padding: 16px; }
 /* Auto margins (not flex centring) so zoomed pages stay scrollable to their left edge. */
 .pdf-page { background: white; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2); margin-left: auto; margin-right: auto; }
+.pdf-page { position: relative; }
 .pdf-page canvas { display: block; }
+/* pdf.js text layer (from pdfjs-dist/web/pdf_viewer.css): transparent text over the canvas. */
+.textLayer {
+  position: absolute; inset: 0; overflow: clip; line-height: 1; text-align: initial;
+  text-size-adjust: none; -webkit-text-size-adjust: none; forced-color-adjust: none;
+  transform-origin: 0 0; caret-color: CanvasText; z-index: 0;
+}
+.textLayer :is(span, br) { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; }
+.textLayer > :not(.markedContent), .textLayer .markedContent span:not(.markedContent) { z-index: 1; }
+.textLayer span.markedContent { top: 0; height: 0; }
+.textLayer span[role="img"] { user-select: none; cursor: default; }
+.textLayer ::selection { background: rgba(0 0 255 / 0.25); background: color-mix(in srgb, AccentColor, transparent 75%); }
+.textLayer br::selection { background: transparent; }
+.textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: default; user-select: none; }
+.textLayer.selecting .endOfContent { top: 0; }
 .pdf-loading { color: var(--muted); padding: 48px; }
 .pdf-progress { width: min(360px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 8px; text-align: left; }
 .pdf-progress-title { color: var(--text); font-weight: 600; }
 .pdf-progress-detail { font-size: 13px; font-variant-numeric: tabular-nums; }
-.pdf-progress-track { height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; }
+.pdf-progress-track { height: 6px; border-radius: 3px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); overflow: hidden; }
 .pdf-progress-fill { height: 100%; width: 0; border-radius: 3px; background: var(--accent); transition: width 0.2s linear; }
 .pdf-progress-track.indeterminate .pdf-progress-fill { width: 30%; animation: pdf-slide 1.2s ease-in-out infinite; }
 @keyframes pdf-slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
@@ -252,8 +271,49 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
   border: none;
   border-radius: 6px;
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
   font-weight: 600;
 }
 .primary:disabled { opacity: 0.5; cursor: default; }
 .account { display: flex; align-items: center; gap: 12px; }
+
+/* Questions after the first visit to a paper */
+.questions {
+  width: min(480px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+.questions::backdrop { background: rgba(0, 0, 0, 0.35); }
+.questions form { display: flex; flex-direction: column; gap: 14px; padding: 20px; }
+.questions h2 { margin: 0 0 6px; font-size: 17px; }
+.questions header p { margin: 0 0 4px; }
+.questions-paper strong { font-weight: 600; }
+.question { border: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.question legend { padding: 0; margin-bottom: 6px; font-weight: 500; }
+.scale { display: flex; align-items: center; gap: 8px; }
+.scale .muted { flex: 1; }
+.scale .muted:last-child { text-align: right; }
+.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.segmented button { background: var(--surface); border: none; padding: 6px 12px; min-width: 40px; min-height: 36px; }
+.segmented button + button { border-left: 1px solid var(--border); }
+.segmented button[aria-checked="true"], .segmented button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+.question > .segmented { align-self: flex-start; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 5px 12px; }
+.chip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.questions footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.questions-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.questions .primary { padding: 8px 18px; }
+.secondary { padding: 8px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+.questions button:disabled { opacity: 0.5; cursor: default; }
+@media (max-width: 420px) {
+  .scale { flex-wrap: wrap; }
+  .scale .segmented { order: -1; width: 100%; }
+  .scale .segmented button, .question > .segmented button { flex: 1; }
+  .question > .segmented { align-self: stretch; }
+}

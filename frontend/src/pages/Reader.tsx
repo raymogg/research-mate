@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useApp } from "../App";
-import { api, type Paper } from "../api";
+import { api, eventConfig, type Paper, type Via } from "../api";
 import { PdfView } from "../components/PdfView";
 import { RatingStars } from "../components/RatingStars";
 import { StatusSelect } from "../components/StatusSelect";
 import { TagInput } from "../components/TagInput";
 import { authorLine, duration } from "../format";
-import { DwellTracker } from "../tracking/dwellTracker";
+import { sessionContext } from "../tracking/context";
+import { DwellTracker, type VisibleRange } from "../tracking/dwellTracker";
 
 const ZOOM_STEP = 0.15;
 
@@ -24,6 +25,18 @@ export function Reader() {
   const [showPrompt, setShowPrompt] = useState(false);
   const tracker = useRef<DwellTracker | null>(null);
   const pageRef = useRef(1);
+  const visibleRange = useRef<VisibleRange | null>(null);
+  const zoomRef = useRef(1);
+  const location = useLocation();
+  const navigate = useNavigate();
+  // How we got here, from the link that opened the reader. Later sessions on this
+  // page (after a long absence, or a back/forward restore) are "resume".
+  const via = useRef<Via>((location.state as { via?: Via } | null)?.via ?? { kind: "direct" });
+
+  // Drop the link's state so a reload counts as "direct", not as another click.
+  useEffect(() => {
+    if (location.state) navigate(location.pathname, { replace: true, state: null });
+  }, [location, navigate]);
 
   const merge = useCallback((updated: Paper) => {
     setPaper((prev) => (prev ? { ...prev, ...updated, abstract: updated.abstract ?? prev.abstract } : updated));
@@ -38,11 +51,19 @@ export function Reader() {
     const gapMs = config.return_visit_gap_min * 60_000;
 
     const start = async () => {
-      const session = await api.openSession(key);
+      const session = await api.openSession(key, sessionContext(via.current));
       if (cancelled) return;
+      via.current = { kind: "resume" };
       merge(session.paper);
       setSessionMs(0);
-      const t = new DwellTracker(buffer, session.paper.arxiv_id, session.session_id, config.idle_cutoff_s * 1000, setSessionMs);
+      const t = new DwellTracker(
+        buffer,
+        session.paper.arxiv_id,
+        session.session_id,
+        eventConfig(config),
+        (p) => visibleRange.current?.(p) ?? null,
+        setSessionMs,
+      );
       t.setPage(pageRef.current);
       tracker.current = t;
     };
@@ -115,6 +136,14 @@ export function Reader() {
   }, []);
   const onLoaded = useCallback((n: number) => setNumPages(n), []);
   const onPdfError = useCallback((m: string) => setError(`Couldn't load the PDF: ${m}`), []);
+  const onCopy = useCallback((p: number | null, chars: number) => tracker.current?.copied(p, chars), []);
+  const changeZoom = (next: number) => {
+    const from = zoomRef.current;
+    const to = Math.round(next * 100) / 100;
+    zoomRef.current = to;
+    setZoom(to);
+    tracker.current?.zoomed(from, to);
+  };
 
   return (
     <div className="reader">
@@ -144,13 +173,13 @@ export function Reader() {
               {numPages ? ` / ${numPages}` : ""}
             </span>
             <span className="zoom">
-              <button onClick={() => setZoom((z) => Math.max(0.4, z - ZOOM_STEP))} aria-label="Zoom out">
+              <button onClick={() => changeZoom(Math.max(0.4, zoom - ZOOM_STEP))} aria-label="Zoom out">
                 −
               </button>
-              <button onClick={() => setZoom(1)} title="Fit width">
+              <button onClick={() => changeZoom(1)} title="Fit width">
                 {Math.round(zoom * 100)}%
               </button>
-              <button onClick={() => setZoom((z) => Math.min(3, z + ZOOM_STEP))} aria-label="Zoom in">
+              <button onClick={() => changeZoom(Math.min(3, zoom + ZOOM_STEP))} aria-label="Zoom in">
                 +
               </button>
             </span>
@@ -190,7 +219,15 @@ export function Reader() {
           </p>
         )}
       </header>
-      <PdfView url={api.pdfUrl(key)} zoom={zoom} onLoaded={onLoaded} onPageInView={onPageInView} onError={onPdfError} />
+      <PdfView
+        url={api.pdfUrl(key)}
+        zoom={zoom}
+        onLoaded={onLoaded}
+        onPageInView={onPageInView}
+        onError={onPdfError}
+        onCopy={onCopy}
+        visibleRangeRef={visibleRange}
+      />
     </div>
   );
 }

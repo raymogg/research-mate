@@ -85,6 +85,18 @@ def write_csv(path: Path, rows: list[dict]) -> None:
         w.writerows(rows)
 
 
+ANSWER_FIELDS = ("interest", "value", "novelty", "level", "reasons", "context")
+
+
+def answer_columns(answers: dict | None) -> dict:
+    """Post-visit answers as flat columns, blank when not given."""
+    a = answers or {}
+    return {
+        f"feedback_{k}": "; ".join(a.get(k) or []) if k == "reasons" else a.get(k)
+        for k in ANSWER_FIELDS
+    }
+
+
 def export(db: Session, settings: Settings, out: Path) -> None:
     out.mkdir(parents=True, exist_ok=True)
     tags: dict[tuple[int, str], list[str]] = {}
@@ -106,7 +118,8 @@ def export(db: Session, settings: Settings, out: Path) -> None:
             "status": p.status, "status_source": p.status_source, "rating": p.rating,
             "tags": "; ".join(sorted(tags.get((p.user_id, p.arxiv_id), []))), "added_at": iso(p.added_at),
             "last_opened_at": iso(p.last_opened_at), "total_active_ms": r["total_ms"], "visits": r["visits"],
-            "pages_viewed": r["pages_viewed"],
+            "pages_viewed": r["pages_viewed"], "feedback_state": p.feedback_state, "source": p.source,
+            **answer_columns(r["feedback"]),
         })
     write_csv(out / "papers.csv", papers)
     write_csv(out / "sessions.csv", admin.sessions(db, limit=1_000_000))
@@ -114,11 +127,14 @@ def export(db: Session, settings: Settings, out: Path) -> None:
         {"user_id": uid, "arxiv_id": a, "page": int(page), "active_ms": ms}
         for (uid, a), p in by_paper.items() for page, ms in p["page_ms"].items()
     ])
+    write_csv(out / "impressions.csv", [
+        {**i, "filters": json.dumps(i["filters"], sort_keys=True)} for i in admin.impressions(db)
+    ])
     with (out / "events.jsonl").open("w") as f:
         for e in db.exec(select(Event).order_by(Event.ts)):
             f.write(json.dumps(admin.event_row(e, {}, names)) + "\n")
     print(f"Exported to {out.resolve()}")
-    for name in ("users.csv", "papers.csv", "sessions.csv", "page_dwell.csv", "events.jsonl"):
+    for name in ("users.csv", "papers.csv", "sessions.csv", "page_dwell.csv", "impressions.csv", "events.jsonl"):
         print(f"  {name}")
 
 

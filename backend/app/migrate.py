@@ -3,6 +3,9 @@
 v1 -> v2 (multi-user): every row gains a user_id. Existing data goes to a new
 admin account "owner" with no usable password; set one with
 `python -m app.cli user passwd owner`.
+
+New columns on existing tables are added in place, using the column's
+server default for existing rows.
 """
 
 import logging
@@ -21,6 +24,27 @@ def _columns(conn, table: str) -> list[str]:
 
 
 def migrate(engine: Engine) -> None:
+    _to_multi_user(engine)
+    _add_columns(engine)
+
+
+def _add_columns(engine: Engine) -> None:
+    with engine.begin() as conn:
+        for table in SQLModel.metadata.sorted_tables:
+            existing = _columns(conn, table.name)
+            if not existing:
+                continue  # create_all makes it
+            for col in table.columns:
+                if col.name in existing:
+                    continue
+                ddl = f"ALTER TABLE {table.name} ADD COLUMN {col.name} {col.type.compile(engine.dialect)}"
+                if col.server_default is not None:
+                    ddl += f" NOT NULL DEFAULT '{col.server_default.arg}'"
+                log.warning("adding column %s.%s", table.name, col.name)
+                conn.execute(text(ddl))
+
+
+def _to_multi_user(engine: Engine) -> None:
     with engine.begin() as conn:
         cols = _columns(conn, "papers")
         if not cols or "user_id" in cols:

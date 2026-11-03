@@ -16,4 +16,5 @@ def make_engine(url: str) -> Engine:
 
 def get_db(request: Request) -> Iterator[Session]:
     with Session(request.app.state.engine) as db:
+        db.info["event_config"] = request.app.state.settings.event_config()  # read by record_event
         yield db

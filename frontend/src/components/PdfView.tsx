@@ -1,7 +1,8 @@
 import * as pdfjs from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, type MutableRefObject, useEffect, useRef, useState } from "react";
 import { bytes } from "../format";
+import type { VisibleRange } from "../tracking/dwellTracker";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -17,17 +18,52 @@ interface Props {
   onLoaded: (numPages: number) => void;
   onPageInView: (page: number) => void;
   onError: (message: string) => void;
+  onCopy: (page: number | null, chars: number) => void;
+  /** Set to a function that reports how much of a page is on screen. */
+  visibleRangeRef: MutableRefObject<VisibleRange | null>;
 }
 
-export const PdfView = memo(function PdfView({ url, zoom, onLoaded, onPageInView, onError }: Props) {
+export const PdfView = memo(function PdfView(props: Props) {
+  const { url, zoom, onLoaded, onPageInView, onError, onCopy, visibleRangeRef } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
   const [doc, setDoc] = useState<pdfjs.PDFDocumentProxy | null>(null);
   const [sizes, setSizes] = useState<Size[]>([]);
   const [width, setWidth] = useState(0);
   const [near, setNear] = useState<Set<number>>(new Set([1, 2]));
   const [progress, setProgress] = useState<Progress | null>(null);
-  const callbacks = useRef({ onLoaded, onPageInView, onError });
-  callbacks.current = { onLoaded, onPageInView, onError };
+  const callbacks = useRef({ onLoaded, onPageInView, onError, onCopy });
+  callbacks.current = { onLoaded, onPageInView, onError, onCopy };
+
+  useEffect(() => {
+    visibleRangeRef.current = (page) => {
+      const root = scrollRef.current;
+      const el = root?.querySelector<HTMLElement>(`[data-page="${page}"]`);
+      if (!root || !el) return null;
+      const view = root.getBoundingClientRect();
+      const box = el.getBoundingClientRect();
+      if (!box.height) return null;
+      const top = Math.max(0, (view.top - box.top) / box.height);
+      const bottom = Math.min(1, (view.bottom - box.top) / box.height);
+      return bottom > top ? [top, bottom] : null;
+    };
+    return () => {
+      visibleRangeRef.current = null;
+    };
+  }, [visibleRangeRef]);
+
+  // Copies from the text layer. Only the length leaves the browser.
+  useEffect(() => {
+    const onCopyEvent = () => {
+      const sel = document.getSelection();
+      const root = scrollRef.current;
+      if (!sel || !root || !sel.anchorNode || !root.contains(sel.anchorNode)) return;
+      const anchor = sel.anchorNode instanceof Element ? sel.anchorNode : sel.anchorNode.parentElement;
+      const page = Number(anchor?.closest<HTMLElement>("[data-page]")?.dataset.page) || null;
+      callbacks.current.onCopy(page, sel.toString().length);
+    };
+    document.addEventListener("copy", onCopyEvent);
+    return () => document.removeEventListener("copy", onCopyEvent);
+  }, []);
 
   // Fetch the whole file in one request (pdf.js would otherwise fire several range
   // requests), then load it and every page's natural size, so placeholders keep the
@@ -195,12 +231,14 @@ function LoadingState({ progress }: { progress: Progress | null }) {
 function PdfPage(props: { doc: pdfjs.PDFDocumentProxy; pageNumber: number; size: Size; scale: number; render: boolean }) {
   const { doc, pageNumber, size, scale, render } = props;
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const textRef = useRef<HTMLDivElement>(null);
   const width = Math.floor(size.width * scale);
   const height = Math.floor(size.height * scale);
 
   useEffect(() => {
     if (!render) return;
     let task: ReturnType<pdfjs.PDFPageProxy["render"]> | null = null;
+    let text: pdfjs.TextLayer | null = null;
     let cancelled = false;
     void doc.getPage(pageNumber).then((page) => {
       const canvas = canvasRef.current;
@@ -215,16 +253,29 @@ function PdfPage(props: { doc: pdfjs.PDFDocumentProxy; pageNumber: number; size:
         transform: dpr === 1 ? undefined : [dpr, 0, 0, dpr, 0, 0],
       });
       task.promise.catch(() => {}); // cancelled renders reject
+      // Invisible, selectable text over the canvas, so passages can be copied.
+      const container = textRef.current;
+      if (container) {
+        container.replaceChildren();
+        text = new pdfjs.TextLayer({ textContentSource: page.streamTextContent(), container, viewport });
+        text.render().catch(() => {});
+      }
     });
     return () => {
       cancelled = true;
       task?.cancel();
+      text?.cancel();
     };
   }, [doc, pageNumber, scale, render]);
 
   return (
-    <div className="pdf-page" data-page={pageNumber} style={{ width, height, marginBottom: PAGE_GAP }}>
+    <div
+      className="pdf-page"
+      data-page={pageNumber}
+      style={{ width, height, marginBottom: PAGE_GAP, ["--scale-factor" as string]: scale }}
+    >
       {render && <canvas ref={canvasRef} style={{ width, height }} />}
+      {render && <div ref={textRef} className="textLayer" />}
     </div>
   );
 }

@@ -263,8 +263,8 @@ def test_same_batch_racing_itself_is_not_an_error(client, add_paper, monkeypatch
     real = metrics.record_event
     raced = []
 
-    def record_then_lose_race(db, user_id, arxiv_id, type, payload, session_id=None, ts=None, event_id=None):
-        out = real(db, user_id, arxiv_id, type, payload, session_id, ts, event_id)
+    def record_then_lose_race(db, user_id, arxiv_id, type, payload, session_id=None, ts=None, event_id=None, config=None):
+        out = real(db, user_id, arxiv_id, type, payload, session_id, ts, event_id, config)
         if out is not None and not raced:
             raced.append(1)
             with Session(client.app.state.engine) as other:

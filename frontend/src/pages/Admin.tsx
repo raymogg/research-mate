@@ -146,8 +146,9 @@ export function Admin() {
         <h2>What we capture</h2>
         <p className="muted small">
           Every event shares an envelope: <code>event_id</code>, <code>type</code>, <code>arxiv_id</code>,{" "}
-          <code>session_id</code>, <code>ts</code>, <code>payload</code> and <code>user_id</code> (a number; the
-          username isn't forwarded). Client events come from the browser; server events are emitted by the backend when
+          <code>session_id</code>, <code>ts</code>, <code>payload</code>, <code>user_id</code> (a number; the
+          username isn't forwarded), <code>schema_version</code> (events from before versioning are 1) and{" "}
+          <code>config</code>, the thresholds in force when the event was made. Client events come from the browser; server events are emitted by the backend when
           state changes. Accounts store a username, a password hash and sign-up time. No IP addresses or browser details
           are stored.
         </p>
@@ -202,6 +203,7 @@ export function Admin() {
               {!userId && <th>User</th>}
               <th>Status</th>
               <th className="num">Rating</th>
+              <th>Answers</th>
               <th className="num">Active</th>
               <th className="num">Visits</th>
               <th className="num">Viewed</th>
@@ -222,6 +224,9 @@ export function Admin() {
                   {STATUS_LABELS[p.status]} <span className="muted small">({p.status_source})</span>
                 </td>
                 <td className="num">{p.rating ? `${p.rating}★` : "—"}</td>
+                <td className="nowrap small" title="Interest · value · novelty (1-5), level, reasons">
+                  {answerSummary(p)}
+                </td>
                 <td className="num">{duration(p.total_ms)}</td>
                 <td className="num">{p.visits}</td>
                 <td className="num">
@@ -429,7 +434,9 @@ function EventStream(props: {
                 </td>
                 <td className="mono muted">{e.session_id?.slice(0, 8) ?? "—"}</td>
                 <td>
-                  <code className="payload">{JSON.stringify(e.payload)}</code>
+                  <code className="payload" title={e.config ? `v${e.schema_version} · ${JSON.stringify(e.config)}` : `v${e.schema_version}`}>
+                    {JSON.stringify(e.payload)}
+                  </code>
                 </td>
                 <td>
                   {e.reported_at ? (
@@ -450,4 +457,13 @@ function EventStream(props: {
       )}
     </section>
   );
+}
+
+function answerSummary(p: PaperReading): string {
+  if (p.feedback_state === "pending") return "Waiting";
+  if (p.feedback_state === "skipped") return "Skipped";
+  const a = p.feedback;
+  if (!a) return "—";
+  const scores = [a.interest, a.value, a.novelty].map((n) => n ?? "–").join(" · ");
+  return [scores, a.level?.replace("_", " "), a.reasons?.join(", ")].filter(Boolean).join(" · ");
 }
