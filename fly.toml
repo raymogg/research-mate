@@ -1,0 +1,36 @@
+# Fly.io: one small machine + one volume for SQLite, PDFs and feedback.log.
+# See DEPLOY.md. `app` must be globally unique; pick a region near you (`fly platform regions`).
+app = "taste-reader"
+primary_region = "syd"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  DATA_DIR = "/data"
+  COOKIE_SECURE = "1"
+  # INVITE_CODE is a secret: fly secrets set INVITE_CODE=...
+
+[[mounts]]
+  source = "taste_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  # Sleeps when idle and wakes on the next request (a second or two). Events
+  # are buffered in the browser, so nothing is lost while it starts.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    path = "/feedback/health"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

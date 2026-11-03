@@ -1,0 +1,11 @@
+services:
+  reader:
+    build: .
+    image: taste-reader
+    ports:
+      - "8000:8000"
+    environment:
+      - INVITE_CODE=${INVITE_CODE:-dev}
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
