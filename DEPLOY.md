@@ -1,9 +1,10 @@
 # Deploying
 
-One Fly.io machine runs the existing Docker image. A 1 GB volume holds `/data`
-(`app.db`, `pdfs/`, `feedback.log`). SQLite stays: one machine and a handful of
-users is well within what it handles. Expect roughly $2–5/month: the machine
-sleeps when idle, and the volume costs about $0.15/GB.
+One Fly.io machine (shared CPU, 1 GB RAM) runs the existing Docker image. A
+10 GB volume holds `/data` (`app.db`, `catalog.db`, `pdfs/`, `feedback.log`).
+SQLite stays: one machine and a handful of users is well within what it
+handles. Expect roughly $2–5/month: the machine sleeps when idle, and the volume costs
+about $0.15/GB.
 
 Why Fly: it runs the Dockerfile unchanged, gives HTTPS on `*.fly.dev`, and has
 persistent volumes with daily snapshots. Railway works much the same way if you
@@ -60,6 +61,14 @@ Only admins see `/admin` and its API.
 
 Fly also snapshots the volume daily and keeps snapshots for 5 days
 (`fly volumes snapshots list <vol-id>`).
+
+## The paper catalog
+
+`/data/catalog.db` holds the arXiv papers and embeddings behind suggestions.
+It's built on the GPU machine and uploaded from there by `data_collection/`
+(`make push`, or a daily systemd timer). See `data_collection/README.md`. The
+server only reads it. A push swaps in the new file only after it passes an
+integrity check.
 
 ## Notes
 

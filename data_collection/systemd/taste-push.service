@@ -1,0 +1,14 @@
+[Unit]
+Description=taste-reader catalog: push to Fly
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=@USER@
+WorkingDirectory=@DIR@
+Environment=PYTHONUNBUFFERED=1
+# fly is installed to ~/.fly/bin; FLY_API_TOKEN goes in /etc/taste-collect.env
+Environment=PATH=@HOME@/.fly/bin:@HOME@/.local/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=-/etc/taste-collect.env
+ExecStart=@UV@ run python -m collect push

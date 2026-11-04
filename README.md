@@ -44,6 +44,10 @@ Open http://localhost:5173 while developing. Dev data also goes to `./data`.
 
 The event catalog (`EVENT_CATALOG` in `backend/app/events.py`) is the single description of what's captured; the admin page and CLI both read it.
 
+## Paper catalog (for suggestions)
+
+`data_collection/` builds `catalog.db` (arXiv metadata plus SPECTER2 embeddings) on a GPU machine and pushes it to the server's `/data`. See `data_collection/README.md`.
+
 ## Configuration
 
 Environment variables (defaults in brackets): `IDLE_CUTOFF_S` (60), `RETURN_VISIT_GAP_MIN` (30), `PAGE_VIEWED_MIN_S` (5), `AUTO_READ_THRESHOLD` (0.8), `FLUSH_INTERVAL_S` (15), `FEEDBACK_URL` (`http://127.0.0.1:8000/feedback/events`), `DATA_DIR` (`./data`; `/data` in Docker), `INVITE_CODE` (empty = sign-up closed; `make dev` uses `dev`), `COOKIE_SECURE` (`0`; set `1` behind HTTPS), `LOGIN_DAYS` (30).

@@ -31,6 +31,7 @@ def create_app(settings: Settings | None = None, feedback_sender: Sender | None 
         yield
         task.cancel()
 
+
     app = FastAPI(title="Taste Reader", lifespan=lifespan)
     app.state.settings = settings
     app.state.engine = make_engine(settings.db_url)

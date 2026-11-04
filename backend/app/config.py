@@ -34,6 +34,11 @@ class Settings:
         return f"sqlite:///{self.data_dir / 'app.db'}"
 
     @property
+    def catalog_path(self) -> Path:
+        """The paper catalog behind suggestions. Built and pushed by data_collection/; read-only here."""
+        return self.data_dir / "catalog.db"
+
+    @property
     def pdf_dir(self) -> Path:
         return self.data_dir / "pdfs"
 

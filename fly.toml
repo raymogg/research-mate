@@ -9,6 +9,8 @@ primary_region = "syd"
 [env]
   DATA_DIR = "/data"
   COOKIE_SECURE = "1"
+  # /data/catalog.db (papers + embeddings for suggestions) is built on the GPU
+  # machine and uploaded by data_collection/ (`make push` there).
   # INVITE_CODE is a secret: fly secrets set INVITE_CODE=...
 
 [[mounts]]
@@ -33,4 +35,4 @@ primary_region = "syd"
 
 [[vm]]
   size = "shared-cpu-1x"
-  memory = "512mb"
+  memory = "1gb"

@@ -1,0 +1,10 @@
+[Unit]
+Description=Push the taste-reader catalog to Fly daily
+
+[Timer]
+OnCalendar=*-*-* 05:00:00
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target
