@@ -49,6 +49,29 @@ def test_old_style_ids_work_via_key(client):
     assert client.get("/api/papers/cs_0101001").json()["arxiv_id"] == "cs/0101001"
 
 
+def test_saved_for_later_waits_in_its_list_until_opened(client):
+    saved = client.post("/api/papers", json={"input": "2401.12345", "intent": "later"}).json()
+    opened = client.post("/api/papers", json={"input": "2401.54321"}).json()
+    open_session(client, opened)
+    assert saved["status"] == "unread" and saved["feedback_state"] == "none"
+    assert [p["arxiv_id"] for p in client.get("/api/papers?later=true").json()] == ["2401.12345"]
+    assert len(client.get("/api/papers").json()) == 2
+    intents = {
+        e["arxiv_id"]: e["payload"]["intent"]
+        for e in client.get("/api/admin/events?type=paper_added").json()
+    }
+    assert intents == {"2401.12345": "later", "2401.54321": "open"}
+
+    # Its first open leaves the list and queues the usual questions.
+    open_session(client, saved)
+    assert client.get("/api/papers?later=true").json() == []
+    assert client.get(f"/api/papers/{saved['key']}").json()["feedback_state"] == "pending"
+
+
+def test_add_paper_rejects_unknown_intent(client):
+    assert client.post("/api/papers", json={"input": "2401.12345", "intent": "someday"}).status_code == 422
+
+
 # --- reading metrics -------------------------------------------------------
 
 

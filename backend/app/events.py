@@ -15,7 +15,7 @@ from sqlmodel import Session, select
 from . import metrics
 from .config import Settings
 from .config import EVENT_CONFIG_KEYS
-from .models import DISCOVERY_SOURCES, SCHEMA_VERSION, Event, Paper, ReadingSession, iso, utcnow
+from .models import ADD_INTENTS, DISCOVERY_SOURCES, SCHEMA_VERSION, Event, Paper, ReadingSession, iso, utcnow
 
 log = logging.getLogger(__name__)
 
@@ -36,6 +36,7 @@ EVENT_CATALOG: dict[str, dict] = {
         "payload": {
             "input": "the exact text pasted (URL or ID)",
             "source": f"where they found it: one of {', '.join(DISCOVERY_SOURCES)}, or null if not given (v3+)",
+            "intent": f"{' or '.join(ADD_INTENTS)}: opened right away, or saved to read later (v4+)",
         },
     },
     "paper_opened": {

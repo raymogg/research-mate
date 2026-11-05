@@ -92,7 +92,7 @@ def test_add_records_where_the_paper_was_found(client):
     paper = client.post("/api/papers", json={"input": "2401.00001", "source": "colleague"}).json()
     assert paper["source"] == "colleague"
     (added,) = events_of(client, "paper_added")
-    assert added.payload == {"input": "2401.00001", "source": "colleague"}
+    assert added.payload == {"input": "2401.00001", "source": "colleague", "intent": "open"}
 
     other = client.post("/api/papers", json={"input": "2401.00002"}).json()
     assert other["source"] is None

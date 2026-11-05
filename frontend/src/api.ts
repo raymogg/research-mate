@@ -72,7 +72,7 @@ export interface SessionContext {
 }
 
 /** Bump with the backend's SCHEMA_VERSION when event shapes or meanings change. */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /** The thresholds stamped on each client event, so old events stay interpretable. */
 export type EventConfig = Pick<ClientConfig, "idle_cutoff_s" | "return_visit_gap_min" | "page_viewed_min_s" | "auto_read_threshold">;
@@ -249,7 +249,8 @@ export const api = {
   },
   listPapers: (params: URLSearchParams) => request<Paper[]>(`/api/papers?${params}`),
   getPaper: (key: string) => request<Paper>(`/api/papers/${key}`),
-  addPaper: (input: string, source: DiscoverySource | null) => request<Paper>("/api/papers", post({ input, source })),
+  addPaper: (input: string, source: DiscoverySource | null, intent: "open" | "later" = "open") =>
+    request<Paper>("/api/papers", post({ input, source, intent })),
   updatePaper: (
     key: string,
     body: Partial<{ status: Status; rating: number | null; prompted: boolean; rating_prompted: boolean; num_pages: number }>,

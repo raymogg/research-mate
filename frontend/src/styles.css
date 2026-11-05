@@ -69,6 +69,24 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
   font-weight: 600;
 }
 .add-form button:disabled { opacity: 0.5; cursor: default; }
+.add-form button.secondary {
+  background: var(--surface);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+.notice { margin: 8px 0 0; color: var(--muted); }
+
+.tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
+.tabs button {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 6px 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
 .source-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 8px; }
 .source-row .chip { font-size: 13px; padding: 3px 10px; }
 

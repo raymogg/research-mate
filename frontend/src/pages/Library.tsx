@@ -41,6 +41,7 @@ function librarySlate(papers: Paper[], params: URLSearchParams): Slate {
     list: "library",
     filters: {
       sort,
+      later: params.get("later") === "true",
       status: params.get("status") || null,
       tags: params.getAll("tag"),
       min_rating: params.get("min_rating") ? Number(params.get("min_rating")) : null,
@@ -60,13 +61,15 @@ export function Library() {
   const table = useRef<HTMLTableElement>(null);
   const [allTags, setAllTags] = useState<string[]>([]);
   const [input, setInput] = useState("");
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState<"open" | "later" | null>(null);
+  const [saved, setSaved] = useState<Paper | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const status = params.get("status") ?? "";
   const tags = params.getAll("tag");
   const minRating = params.get("min_rating") ?? "";
   const sort = (params.get("sort") as SortKey) ?? "last_opened";
+  const later = params.get("later") === "true";
 
   const refresh = useCallback(() => {
     api
@@ -115,14 +118,33 @@ export function Library() {
   const add = async (e: FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
-    setAdding(true);
+    setAdding("open");
     setError(null);
+    setSaved(null);
     try {
       const paper = await api.addPaper(input.trim(), source);
       navigate(`/paper/${paper.key}`, { state: { via: { kind: "pasted" } } });
     } catch (err) {
       setError((err as Error).message);
-      setAdding(false);
+      setAdding(null);
+    }
+  };
+
+  // Adds the paper without opening it. Nothing is asked about it until its first open.
+  const saveForLater = async () => {
+    if (!input.trim()) return;
+    setAdding("later");
+    setError(null);
+    setSaved(null);
+    try {
+      setSaved(await api.addPaper(input.trim(), source, "later"));
+      setInput("");
+      setSource(null);
+      refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setAdding(null);
     }
   };
 
@@ -147,10 +169,18 @@ export function Library() {
             placeholder="Paste an arXiv link or ID, e.g. https://arxiv.org/abs/1706.03762"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            disabled={adding}
+            disabled={adding !== null}
           />
-          <button type="submit" disabled={adding || !input.trim()}>
-            {adding ? "Adding…" : "Open"}
+          <button type="submit" disabled={adding !== null || !input.trim()}>
+            {adding === "open" ? "Adding…" : "Open"}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={adding !== null || !input.trim()}
+            onClick={() => void saveForLater()}
+          >
+            {adding === "later" ? "Saving…" : "Save for later"}
           </button>
         </form>
         {input.trim() && (
@@ -165,7 +195,7 @@ export function Library() {
                   type="button"
                   className="chip"
                   aria-pressed={source === s}
-                  disabled={adding}
+                  disabled={adding !== null}
                   onClick={() => setSource(source === s ? null : s)}
                 >
                   {SOURCE_LABELS[s]}
@@ -174,12 +204,37 @@ export function Library() {
             </div>
           </div>
         )}
+        {saved && (
+          <p className="notice small" role="status">
+            {saved.last_opened_at ? "Already in your library: " : "Saved for later: "}
+            <Link to={`/paper/${saved.key}`} state={{ via: { kind: "pasted" } }}>
+              {saved.title}
+            </Link>
+            {!later && !saved.last_opened_at && (
+              <>
+                {" · "}
+                <button className="link" onClick={() => setParam("later", "true")}>
+                  See your read-later list
+                </button>
+              </>
+            )}
+          </p>
+        )}
         {error && (
           <p className="error" role="alert">
             {error}
           </p>
         )}
       </header>
+
+      <div className="tabs" role="tablist">
+        <button role="tab" aria-selected={!later} onClick={() => setParam("later", "")}>
+          All papers
+        </button>
+        <button role="tab" aria-selected={later} onClick={() => setParam("later", "true")}>
+          Read later
+        </button>
+      </div>
 
       <div className="filters">
         <label>
@@ -238,7 +293,11 @@ export function Library() {
         <p className="muted">Loading…</p>
       ) : papers.length === 0 ? (
         <p className="empty">
-          {filtered ? "No papers match these filters." : "No papers yet. Paste an arXiv link above to start reading."}
+          {filtered
+            ? "No papers match these filters."
+            : later
+              ? "Nothing saved for later. Paste a link above and press Save for later; it stays here until you open it."
+              : "No papers yet. Paste an arXiv link above to start reading."}
         </p>
       ) : (
         <table className="papers" ref={table}>

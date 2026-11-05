@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 from .. import arxiv, events, metrics
 from ..auth import current_user
 from ..db import get_db
-from ..models import DISCOVERY_SOURCES, STATUSES, Paper, PaperTag, User, iso
+from ..models import ADD_INTENTS, DISCOVERY_SOURCES, STATUSES, Paper, PaperTag, User, iso
 from .common import schedule_forward
 
 router = APIRouter(prefix="/api")
@@ -76,6 +76,7 @@ def get_paper(db: Session, user: User, key: str) -> Paper:
 class AddPaper(BaseModel):
     input: str = Field(min_length=1, max_length=500)
     source: Literal[DISCOVERY_SOURCES] | None = None  # where they found it, if they said
+    intent: Literal[ADD_INTENTS] = "open"  # "later": saved to read later, not opened now
 
 
 @router.post("/papers")
@@ -124,7 +125,9 @@ def add_paper(
         )
     paper.source = body.source
     db.add(paper)
-    metrics.record_event(db, user.id, paper.arxiv_id, "paper_added", {"input": body.input, "source": body.source})
+    metrics.record_event(
+        db, user.id, paper.arxiv_id, "paper_added", {"input": body.input, "source": body.source, "intent": body.intent}
+    )
     db.commit()
     schedule_forward(background, request)
     response.status_code = 201
@@ -141,6 +144,7 @@ def list_papers(
     status: list[str] = Query(default=[]),
     tag: list[str] = Query(default=[]),
     min_rating: int | None = Query(default=None, ge=1, le=5),
+    later: bool = False,  # only papers never opened: the read-later list
     sort: SortKey = "last_opened",
     user: User = Depends(current_user),
 ):
@@ -151,6 +155,8 @@ def list_papers(
     wanted_tags = {t.strip().lower() for t in tag}
     rows = []
     for p in papers:
+        if later and p.last_opened_at is not None:
+            continue
         if status and p.status not in status:
             continue
         if min_rating is not None and (p.rating or 0) < min_rating:

@@ -13,7 +13,8 @@ STATUSES = ("unread", "reading", "read", "skimmed", "abandoned")
 #   3: new types impression (no session) and zoom_changed; paper_added adds
 #      `source`; paper_opened adds `context` (how the user got there, device,
 #      viewport, local time)
-SCHEMA_VERSION = 3
+#   4: paper_added adds `intent` ("open", or "later" when saved without opening)
+SCHEMA_VERSION = 4
 
 # none: never asked (papers first opened before feedback existed);
 # pending: opened once, waiting for answers; done / skipped: asked
@@ -22,6 +23,10 @@ FEEDBACK_STATES = ("none", "pending", "done", "skipped")
 # Where the user found a paper they added (asked, optional). "suggested" is
 # reserved for papers our own recommender puts in the library.
 DISCOVERY_SOURCES = ("colleague", "social", "search", "citation", "feed", "other")
+
+# Why a paper was added: to open it now, or saved to the read-later list. A
+# saved paper isn't asked about until its first open, like any other.
+ADD_INTENTS = ("open", "later")
 
 
 def utcnow() -> datetime:
