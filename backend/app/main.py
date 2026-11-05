@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 from .config import Settings
 from .db import make_engine
 from .events import Sender, http_sender
-from .routes import admin, auth, events, feedback_stub, paper_feedback, papers, tags
+from .routes import admin, auth, events, feedback_stub, me, oauth, paper_feedback, papers, tags
 from .routes.common import forward_now
 
 logging.basicConfig(level=logging.INFO)
@@ -39,6 +39,8 @@ def create_app(settings: Settings | None = None, feedback_sender: Sender | None 
     app.state.feedback_seen = None
 
     app.include_router(auth.router)
+    app.include_router(oauth.router)
+    app.include_router(me.router)
     app.include_router(papers.router)
     app.include_router(tags.router)
     app.include_router(paper_feedback.router)

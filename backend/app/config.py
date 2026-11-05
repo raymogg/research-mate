@@ -28,6 +28,17 @@ class Settings:
     # Send the login cookie over HTTPS only. Set in production.
     cookie_secure: bool = field(default_factory=lambda: _env("COOKIE_SECURE", "0") == "1")
     login_days: int = field(default_factory=lambda: int(_env("LOGIN_DAYS", "30")))
+    # Where browsers reach the app, e.g. https://taste-reader.fly.dev. OAuth
+    # redirect URIs are built from it; empty uses the request's own URL (dev).
+    public_url: str = field(default_factory=lambda: _env("PUBLIC_URL", ""))
+    # OAuth apps for "Sign in with Google / GitHub". A provider shows up once both are set.
+    google_client_id: str = field(default_factory=lambda: _env("GOOGLE_CLIENT_ID", ""))
+    google_client_secret: str = field(default_factory=lambda: _env("GOOGLE_CLIENT_SECRET", ""))
+    github_client_id: str = field(default_factory=lambda: _env("GITHUB_CLIENT_ID", ""))
+    github_client_secret: str = field(default_factory=lambda: _env("GITHUB_CLIENT_SECRET", ""))
+    # Days Fly keeps volume snapshots (fly.toml `snapshot_retention`): how long
+    # deleted data can linger in backups. Shown on the profile page.
+    backup_retention_days: int = field(default_factory=lambda: int(_env("BACKUP_RETENTION_DAYS", "14")))
 
     @property
     def db_url(self) -> str:
@@ -46,6 +57,11 @@ class Settings:
     def feedback_log(self) -> Path:
         return self.data_dir / "feedback.log"
 
+    def oauth_client(self, provider: str) -> tuple[str, str] | None:
+        """(client id, secret) if that provider is set up."""
+        pair = (getattr(self, f"{provider}_client_id", ""), getattr(self, f"{provider}_client_secret", ""))
+        return pair if all(pair) else None
+
     def event_config(self) -> dict:
         """The thresholds stamped on every event (see `Event.config`)."""
         return {k: getattr(self, k) for k in EVENT_CONFIG_KEYS}
@@ -59,4 +75,5 @@ class Settings:
             "auto_read_threshold": self.auto_read_threshold,
             "flush_interval_s": self.flush_interval_s,
             "signup_open": bool(self.invite_code),
+            "providers": [p for p in ("google", "github") if self.oauth_client(p)],
         }

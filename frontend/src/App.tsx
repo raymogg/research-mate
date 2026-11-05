@@ -4,6 +4,7 @@ import { api, ApiError, SIGNED_OUT, type ClientConfig, type User } from "./api";
 import { Admin } from "./pages/Admin";
 import { Library } from "./pages/Library";
 import { Login } from "./pages/Login";
+import { Profile } from "./pages/Profile";
 import { Reader } from "./pages/Reader";
 import { PaperQuestions } from "./components/PaperQuestions";
 import { EventBuffer } from "./tracking/eventBuffer";
@@ -59,7 +60,7 @@ export function App() {
 
   if (error) return <div className="page-message">{error}</div>;
   if (!base || user === undefined) return <div className="page-message">Loading…</div>;
-  if (user === null) return <Login signupOpen={base.config.signup_open} onSignedIn={signIn} />;
+  if (user === null) return <Login signupOpen={base.config.signup_open} providers={base.config.providers} onSignedIn={signIn} />;
   return (
     <Ctx.Provider value={{ ...base, user, signOut }}>
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
@@ -67,6 +68,7 @@ export function App() {
         <Routes>
           <Route path="/" element={<Library />} />
           <Route path="/paper/:key" element={<Reader />} />
+          <Route path="/profile" element={<Profile />} />
           <Route
             path="/admin"
             element={user.is_admin ? <Admin /> : <div className="page-message">Admins only. <Link to="/">Back to library</Link></div>}

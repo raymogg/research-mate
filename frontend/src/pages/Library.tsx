@@ -157,7 +157,9 @@ export function Library() {
           <h1>Reading library</h1>
           <div className="account small">
             {user.is_admin && <Link to="/admin">Captured data →</Link>}
-            <span className="muted">{user.username}</span>
+            <Link to="/profile" title="Your profile and data">
+              {user.username}
+            </Link>
             <button className="link" onClick={() => void signOut()}>
               Sign out
             </button>

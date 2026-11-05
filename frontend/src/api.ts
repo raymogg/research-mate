@@ -89,6 +89,43 @@ export interface ClientConfig {
   auto_read_threshold: number;
   flush_interval_s: number;
   signup_open: boolean;
+  providers: Provider[]; // set up for "Continue with …"
+}
+
+export type Provider = "google" | "github";
+export const PROVIDER_NAMES: Record<Provider, string> = { google: "Google", github: "GitHub" };
+
+export interface ApiTokenInfo {
+  id: number;
+  name: string;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+export interface Profile extends User {
+  created_at: string;
+  has_password: boolean;
+  identities: { provider: Provider; email: string | null; created_at: string; last_used_at: string }[];
+  tokens: ApiTokenInfo[];
+  data: {
+    papers: number;
+    sessions: number;
+    events: number;
+    active_ms: number;
+    first_event_ts: string | null;
+    last_event_ts: string | null;
+  };
+  backup_retention_days: number;
+}
+
+export interface MyEvent {
+  event_id: string;
+  type: string;
+  arxiv_id: string;
+  title: string | null;
+  session_id: string | null;
+  ts: string;
+  payload: Record<string, unknown>;
 }
 
 export interface User {
@@ -246,6 +283,19 @@ export const api = {
     signup: (username: string, password: string, invite_code: string) =>
       request<User>("/api/auth/signup", post({ username, password, invite_code })),
     logout: () => request<void>("/api/auth/logout", { method: "POST" }),
+    /** Where to send the browser to sign in with a provider. */
+    oauthStart: (provider: Provider, mode: "login" | "signup" | "link", invite_code = "") =>
+      request<{ url: string }>(`/api/auth/oauth/${provider}/start`, post({ mode, invite_code })),
+  },
+  me: {
+    profile: () => request<Profile>("/api/me"),
+    events: (offset: number, limit = 50) => request<MyEvent[]>(`/api/me/events?offset=${offset}&limit=${limit}`),
+    exportUrl: "/api/me/export",
+    createToken: (name: string) => request<ApiTokenInfo & { token: string }>("/api/me/tokens", post({ name })),
+    revokeToken: (id: number) => request<void>(`/api/me/tokens/${id}`, { method: "DELETE" }),
+    unlink: (provider: Provider) => request<void>(`/api/me/identities/${provider}`, { method: "DELETE" }),
+    deleteAccount: (confirm: string) =>
+      request<void>("/api/me", { method: "DELETE", body: JSON.stringify({ confirm }) }),
   },
   listPapers: (params: URLSearchParams) => request<Paper[]>(`/api/papers?${params}`),
   getPaper: (key: string) => request<Paper>(`/api/papers/${key}`),
