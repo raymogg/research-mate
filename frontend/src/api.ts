@@ -9,6 +9,7 @@ export interface Metrics {
   completion: number | null;
   furthest_page: number | null;
   page_ms?: Record<string, number>;
+  section_ms?: Record<string, number>;
 }
 
 export interface Paper {
@@ -58,9 +59,13 @@ export type Via =
   | { kind: "library"; slate_id: string; position: number }
   | { kind: "pasted" | "direct" | "resume" };
 
+/** How the reader shows a paper: arXiv's PDF, or arXiv's HTML (the default on phones). */
+export type ReaderView = "pdf" | "html";
+
 /** Sent when a session opens; the server keeps whatever parts are valid. */
 export interface SessionContext {
   via: Via;
+  view: ReaderView;
   device: "phone" | "tablet" | "desktop";
   viewport: [number, number];
   screen: [number, number];
@@ -72,7 +77,7 @@ export interface SessionContext {
 }
 
 /** Bump with the backend's SCHEMA_VERSION when event shapes or meanings change. */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 /** The thresholds stamped on each client event, so old events stay interpretable. */
 export type EventConfig = Pick<ClientConfig, "idle_cutoff_s" | "return_visit_gap_min" | "page_viewed_min_s" | "auto_read_threshold">;
@@ -107,7 +112,14 @@ export interface AdminUser extends User {
 
 export interface ClientEvent {
   event_id: string;
-  type: "page_dwell" | "paper_closed" | "text_copied" | "zoom_changed" | "impression";
+  type:
+    | "page_dwell"
+    | "section_dwell"
+    | "paper_closed"
+    | "text_copied"
+    | "zoom_changed"
+    | "view_changed"
+    | "impression";
   arxiv_id: string;
   session_id: string | null; // null only for impressions
   ts: string;
@@ -264,6 +276,7 @@ export const api = {
   removeTag: (key: string, tag: string) => request<Paper>(tagPath(key, tag), { method: "DELETE" }),
   listTags: () => request<{ name: string; count: number }[]>("/api/tags"),
   pdfUrl: (key: string) => `/api/papers/${key}/pdf`,
+  htmlUrl: (key: string, theme: "light" | "dark") => `/api/papers/${key}/html?theme=${theme}`,
   pendingFeedback: () => request<Paper[]>("/api/feedback/pending"),
   answer: (key: string, body: Answers) => request<Paper>(`/api/papers/${key}/feedback`, post(body)),
   admin: {

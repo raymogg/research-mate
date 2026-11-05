@@ -1,16 +1,34 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useApp } from "../App";
-import { api, eventConfig, type Paper, type Via } from "../api";
+import { api, eventConfig, type Paper, type ReaderView, type Via } from "../api";
+import { type HtmlFailure, HtmlView } from "../components/HtmlView";
 import { PdfView } from "../components/PdfView";
 import { RatingStars } from "../components/RatingStars";
 import { StatusSelect } from "../components/StatusSelect";
 import { TagInput } from "../components/TagInput";
 import { authorLine, duration } from "../format";
-import { sessionContext } from "../tracking/context";
-import { DwellTracker, type VisibleRange } from "../tracking/dwellTracker";
+import { deviceKind, sessionContext } from "../tracking/context";
+import { DwellTracker, pageUnits, type Units, type VisibleRange } from "../tracking/dwellTracker";
 
 const ZOOM_STEP = 0.15;
+const VIEW_KEY = "taste-reader:view"; // the view this browser last picked
+
+/** The view to open papers in: the one picked last on this device, else HTML on phones. */
+function preferredView(): ReaderView {
+  try {
+    const saved = localStorage.getItem(VIEW_KEY);
+    if (saved === "pdf" || saved === "html") return saved;
+  } catch {
+    // storage blocked: use the default
+  }
+  return deviceKind() === "phone" ? "html" : "pdf";
+}
+
+const FALLBACK_NOTICE: Record<HtmlFailure, string> = {
+  no_html: "arXiv has no HTML version of this paper, so here's the PDF.",
+  html_failed: "The HTML version wouldn't load, so here's the PDF.",
+};
 
 export function Reader() {
   const { key = "" } = useParams();
@@ -19,13 +37,19 @@ export function Reader() {
   const [error, setError] = useState<string | null>(null);
   const [numPages, setNumPages] = useState<number | null>(null);
   const [page, setPage] = useState(1);
+  const [section, setSection] = useState<{ index: number; of: number } | null>(null);
+  const [view, setView] = useState<ReaderView>(preferredView);
+  const [notice, setNotice] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [sessionMs, setSessionMs] = useState(0);
   const [allTags, setAllTags] = useState<string[]>([]);
   const [showPrompt, setShowPrompt] = useState(false);
   const tracker = useRef<DwellTracker | null>(null);
-  const pageRef = useRef(1);
+  const pageRef = useRef<number | string | null>(null); // unit in view: PDF page or HTML section
   const visibleRange = useRef<VisibleRange | null>(null);
+  const htmlUnits = useRef<Units | null>(null);
+  const viewRef = useRef(view);
+  const switchReason = useRef<"user" | HtmlFailure>("user");
   const zoomRef = useRef(1);
   const location = useLocation();
   const navigate = useNavigate();
@@ -43,6 +67,20 @@ export function Reader() {
   }, []);
   const run = (p: Promise<Paper>) => p.then(merge).catch((e) => setError(e.message));
 
+  // Time goes to PDF pages or HTML sections, whichever is showing. Both read the
+  // live view through refs, so a tracker can outlive a switch.
+  const units = useMemo<Record<ReaderView, Units>>(
+    () => ({
+      pdf: pageUnits((p) => visibleRange.current?.(p) ?? null),
+      html: {
+        dwellType: "section_dwell",
+        describe: (u) => htmlUnits.current?.describe(u) ?? { section: String(u) },
+        visibleRange: (u) => htmlUnits.current?.visibleRange(u) ?? null,
+      },
+    }),
+    [],
+  );
+
   // One reading session per visit. Coming back to a tab hidden for longer than the
   // return-visit gap closes the old session and opens a new one.
   useEffect(() => {
@@ -51,7 +89,8 @@ export function Reader() {
     const gapMs = config.return_visit_gap_min * 60_000;
 
     const start = async () => {
-      const session = await api.openSession(key, sessionContext(via.current));
+      const openedIn = viewRef.current;
+      const session = await api.openSession(key, sessionContext(via.current, openedIn));
       if (cancelled) return;
       via.current = { kind: "resume" };
       merge(session.paper);
@@ -61,10 +100,12 @@ export function Reader() {
         session.paper.arxiv_id,
         session.session_id,
         eventConfig(config),
-        (p) => visibleRange.current?.(p) ?? null,
+        units[viewRef.current],
         setSessionMs,
       );
-      t.setPage(pageRef.current);
+      // Switched while the session was opening (e.g. no HTML): record it now
+      if (viewRef.current !== openedIn) t.viewChanged(openedIn, viewRef.current, switchReason.current);
+      if (pageRef.current !== null) t.setPage(pageRef.current);
       tracker.current = t;
     };
     const end = (keepalive = false) => {
@@ -98,7 +139,7 @@ export function Reader() {
       window.removeEventListener("pageshow", onPageShow);
       end();
     };
-  }, [key, buffer, config, merge]);
+  }, [key, buffer, config, merge, units]);
 
   // Server-side state changes (e.g. auto-Read) arrive with each event flush.
   useEffect(
@@ -134,9 +175,39 @@ export function Reader() {
     setPage(p);
     tracker.current?.setPage(p);
   }, []);
+  const onSectionInView = useCallback((id: string, index: number, of: number) => {
+    pageRef.current = id;
+    setSection({ index, of });
+    tracker.current?.setPage(id);
+  }, []);
+
+  const switchView = useCallback((to: ReaderView, reason: "user" | HtmlFailure) => {
+    const from = viewRef.current;
+    if (from === to) return;
+    viewRef.current = to;
+    switchReason.current = reason;
+    pageRef.current = null;
+    tracker.current?.setUnits(units[to]); // hands over the old view's time first
+    tracker.current?.viewChanged(from, to, reason);
+    setView(to);
+    setSection(null);
+    zoomRef.current = 1;
+    setZoom(1);
+    setNotice(reason === "user" ? null : FALLBACK_NOTICE[reason]);
+    if (reason === "user") {
+      try {
+        localStorage.setItem(VIEW_KEY, to);
+      } catch {
+        // not remembered; fine
+      }
+    }
+  }, [units]);
+  const onHtmlError = useCallback((kind: HtmlFailure) => switchView("pdf", kind), [switchView]);
+  const onHtmlActivity = useCallback(() => tracker.current?.touch(), []);
   const onLoaded = useCallback((n: number) => setNumPages(n), []);
   const onPdfError = useCallback((m: string) => setError(`Couldn't load the PDF: ${m}`), []);
-  const onCopy = useCallback((p: number | null, chars: number) => tracker.current?.copied(p, chars), []);
+  const onCopy = useCallback((p: number | string | null, chars: number) => tracker.current?.copied(p, chars), []);
+  const theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   const changeZoom = (next: number) => {
     const from = zoomRef.current;
     const to = Math.round(next * 100) / 100;
@@ -168,15 +239,31 @@ export function Reader() {
             <span className="muted small" title="Active reading time this session">
               {duration(sessionMs)}
             </span>
+            <span className="segmented view-toggle" role="radiogroup" aria-label="Show the paper as">
+              {(["pdf", "html"] as const).map((v) => (
+                <button
+                  key={v}
+                  role="radio"
+                  aria-checked={view === v}
+                  title={v === "html" ? "arXiv's HTML version: reflows to fit small screens" : "The PDF"}
+                  onClick={() => switchView(v, "user")}
+                >
+                  {v.toUpperCase()}
+                </button>
+              ))}
+            </span>
             <span className="small">
-              Page {page}
-              {numPages ? ` / ${numPages}` : ""}
+              {view === "pdf"
+                ? `Page ${page}${numPages ? ` / ${numPages}` : ""}`
+                : section
+                  ? `Section ${section.index} / ${section.of}`
+                  : ""}
             </span>
             <span className="zoom">
               <button onClick={() => changeZoom(Math.max(0.4, zoom - ZOOM_STEP))} aria-label="Zoom out">
                 −
               </button>
-              <button onClick={() => changeZoom(1)} title="Fit width">
+              <button onClick={() => changeZoom(1)} title={view === "pdf" ? "Fit width" : "Normal text size"}>
                 {Math.round(zoom * 100)}%
               </button>
               <button onClick={() => changeZoom(Math.min(3, zoom + ZOOM_STEP))} aria-label="Zoom in">
@@ -213,21 +300,38 @@ export function Reader() {
             </button>
           </div>
         )}
+        {notice && (
+          <p className="notice small" role="status">
+            {notice}
+          </p>
+        )}
         {error && (
           <p className="error" role="alert">
             {error}
           </p>
         )}
       </header>
-      <PdfView
-        url={api.pdfUrl(key)}
-        zoom={zoom}
-        onLoaded={onLoaded}
-        onPageInView={onPageInView}
-        onError={onPdfError}
-        onCopy={onCopy}
-        visibleRangeRef={visibleRange}
-      />
+      {view === "html" ? (
+        <HtmlView
+          url={api.htmlUrl(key, theme)}
+          zoom={zoom}
+          onSectionInView={onSectionInView}
+          onError={onHtmlError}
+          onCopy={onCopy}
+          onActivity={onHtmlActivity}
+          unitsRef={htmlUnits}
+        />
+      ) : (
+        <PdfView
+          url={api.pdfUrl(key)}
+          zoom={zoom}
+          onLoaded={onLoaded}
+          onPageInView={onPageInView}
+          onError={onPdfError}
+          onCopy={onCopy}
+          visibleRangeRef={visibleRange}
+        />
+      )}
     </div>
   );
 }

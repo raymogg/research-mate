@@ -26,6 +26,9 @@ REASONS = ("off_topic", "poorly_written", "not_now", "great_method", "great_idea
 LISTS = ("library", "suggested")
 PURPOSES = ("library", "exploit", "explore", "elicit", "curriculum")
 VIA = ("library", "pasted", "direct", "resume")
+# How the paper was shown: arXiv's PDF, or arXiv's HTML (the default on phones)
+VIEWS = ("pdf", "html")
+VIEW_REASONS = ("user", "no_html", "html_failed")
 
 # Every event type we capture: where it comes from, what it means, its payload fields.
 # The admin page and `app.cli` read this, so keep it in step with what is emitted.
@@ -47,7 +50,8 @@ EVENT_CATALOG: dict[str, dict] = {
             "context": "how the session started and on what screen, or null (v3+): "
             f"via.kind ({', '.join(VIA)}), via.slate_id and via.position when opened from a list, "
             "device (phone, tablet, desktop), viewport and screen [w, h] in CSS px, dpr, "
-            "local_hour 0-23, weekday 1-7 (Monday = 1), tz, tz_offset_min",
+            "local_hour 0-23, weekday 1-7 (Monday = 1), tz, tz_offset_min, "
+            f"view ({', '.join(VIEWS)}: what the reader opened with, v5+)",
         },
     },
     "impression": {
@@ -69,7 +73,34 @@ EVENT_CATALOG: dict[str, dict] = {
     "zoom_changed": {
         "source": "client",
         "description": "The reader's zoom changed with its buttons (v3+)",
-        "payload": {"from": "previous zoom (1 = fit width)", "to": "new zoom", "page": "page in view"},
+        "payload": {
+            "from": "previous zoom (1 = fit width in the PDF, 100% text size in HTML)",
+            "to": "new zoom",
+            "page": "page in view (PDF), or null",
+            "section": "section in view (HTML, v5+)",
+        },
+    },
+    "section_dwell": {
+        "source": "client",
+        "description": "Active reading time on one section of arXiv's HTML version, the HTML "
+        "counterpart of page_dwell (v5+)",
+        "payload": {
+            "section": "the section's id in arXiv's HTML: S3, A1 (appendix), abstract, bib, ...",
+            "index": "1-based position among the paper's sections",
+            "of": "how many sections the paper has",
+            "share": "the section's share of the paper's height, 0-1; sums to 1 over a paper",
+            "active_ms": "active time since the last report for this section",
+            "band_ms": "10 numbers: active ms each tenth of the section was on screen, as in page_dwell",
+        },
+    },
+    "view_changed": {
+        "source": "client",
+        "description": "The reader switched between PDF and HTML (v5+)",
+        "payload": {
+            "from": f"one of {', '.join(VIEWS)}",
+            "to": f"one of {', '.join(VIEWS)}",
+            "reason": "user (the toggle), no_html (arXiv has none) or html_failed (it wouldn't load)",
+        },
     },
     "page_dwell": {
         "source": "client",
@@ -84,7 +115,11 @@ EVENT_CATALOG: dict[str, dict] = {
     "text_copied": {
         "source": "client",
         "description": "Text was copied from the PDF. Only the length is kept, never the text (v2+)",
-        "payload": {"page": "page the selection starts on, or null", "chars": "characters copied"},
+        "payload": {
+            "page": "page the selection starts on, or null",
+            "section": "section it starts in (HTML, v5+)",
+            "chars": "characters copied",
+        },
     },
     "paper_closed": {
         "source": "client",
@@ -98,8 +133,13 @@ EVENT_CATALOG: dict[str, dict] = {
     },
     "completion_reached": {
         "source": "server",
-        "description": "Pages viewed crossed AUTO_READ_THRESHOLD (once per paper)",
-        "payload": {"pages_viewed": "pages with ≥ PAGE_VIEWED_MIN_S active time", "num_pages": "pages in the PDF"},
+        "description": "Pages viewed (PDF) or the share of sections viewed (HTML) crossed "
+        "AUTO_READ_THRESHOLD (once per paper)",
+        "payload": {
+            "pages_viewed": "pages with ≥ PAGE_VIEWED_MIN_S active time",
+            "num_pages": "pages in the PDF",
+            "html_share_viewed": "share of the HTML (by height) in sections with ≥ PAGE_VIEWED_MIN_S (v5+)",
+        },
     },
     "rating_set": {
         "source": "server",
@@ -185,9 +225,26 @@ def _valid(e: ClientEvent) -> bool:
                 or (isinstance(bands, list) and len(bands) == BANDS and all(_int(b, 0, MAX_DWELL_MS) for b in bands))
             )
         )
+    if e.type == "section_dwell":
+        p, bands = e.payload, e.payload.get("band_ms")
+        return (
+            _str(p.get("section"), 1, 64)
+            and _int(p.get("of"), 1, 10_000)
+            and _int(p.get("index"), 1, p["of"])
+            and _num(p.get("share"), 0, 1)
+            and _int(p.get("active_ms"), 1, MAX_DWELL_MS)
+            and isinstance(bands, list) and len(bands) == BANDS and all(_int(b, 0, MAX_DWELL_MS) for b in bands)
+        )
+    if e.type == "view_changed":
+        p = e.payload
+        return p.get("from") in VIEWS and p.get("to") in VIEWS and p["from"] != p["to"] and p.get("reason") in VIEW_REASONS
     if e.type == "text_copied":
-        page = e.payload.get("page")
-        return (page is None or _int(page, 1, 100_000)) and _int(e.payload.get("chars"), 1, MAX_COPY_CHARS)
+        page, section = e.payload.get("page"), e.payload.get("section")
+        return (
+            (page is None or _int(page, 1, 100_000))
+            and (section is None or _str(section, 1, 64))
+            and _int(e.payload.get("chars"), 1, MAX_COPY_CHARS)
+        )
     if e.type == "impression":
         p = e.payload
         filters, score, propensity = p.get("filters", {}), p.get("score"), p.get("propensity")
@@ -205,7 +262,12 @@ def _valid(e: ClientEvent) -> bool:
         )
     if e.type == "zoom_changed":
         p = e.payload
-        return _num(p.get("from"), 0.1, 10) and _num(p.get("to"), 0.1, 10) and _int(p.get("page"), 1, 100_000)
+        page, section = p.get("page"), p.get("section")
+        return (
+            _num(p.get("from"), 0.1, 10)
+            and _num(p.get("to"), 0.1, 10)
+            and (_int(page, 1, 100_000) or (page is None and _str(section, 1, 64)))
+        )
     return True
 
 
@@ -238,6 +300,7 @@ class SessionContext(BaseModel):
     weekday: int | None = Field(default=None, ge=1, le=7)
     tz: str | None = Field(default=None, max_length=64)
     tz_offset_min: int | None = Field(default=None, ge=-840, le=840)
+    view: Literal[VIEWS] | None = None
 
     @field_validator("viewport", "screen")
     @classmethod
@@ -297,7 +360,7 @@ def _ingest(db: Session, settings: Settings, user_id: int, events: list[ClientEv
         if session is None:
             continue  # impressions don't change any paper
         affected.add(e.arxiv_id)
-        if e.type == "page_dwell":
+        if e.type in ("page_dwell", "section_dwell"):
             session.active_ms += e.payload["active_ms"]
         elif e.type == "paper_closed":
             session.ended_at = ts

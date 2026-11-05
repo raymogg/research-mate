@@ -43,6 +43,11 @@ class Settings:
         return self.data_dir / "pdfs"
 
     @property
+    def html_dir(self) -> Path:
+        """Reader documents built from arXiv's HTML (see arxiv.fetch_html)."""
+        return self.data_dir / "html"
+
+    @property
     def feedback_log(self) -> Path:
         return self.data_dir / "feedback.log"
 

@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
@@ -39,13 +39,14 @@ def serialize(paper: Paper, tags: list[str], r: metrics.Rollup, min_s: int, deta
             "total_ms": r.total_ms(),
             "visits": r.visits,
             "pages_viewed": viewed,
-            "completion": viewed / paper.num_pages if paper.num_pages else None,
+            "completion": r.completion(min_s, paper.num_pages),
             "furthest_page": r.furthest_page(),
         },
     }
     if detail:
         out["abstract"] = paper.abstract
         out["metrics"]["page_ms"] = {str(p): ms for p, ms in sorted(r.page_ms.items())}
+        out["metrics"]["section_ms"] = dict(r.section_ms)
     return out
 
 
@@ -261,3 +262,53 @@ def paper_pdf(key: str, request: Request, db: Session = Depends(get_db), user: U
     if size:
         headers["Content-Length"] = str(size)
     return StreamingResponse(body, media_type="application/pdf", headers=headers)
+
+
+# The reader document runs no scripts at all. It may load arXiv's stylesheets,
+# fonts and images, and be framed only by our own pages.
+HTML_POLICY = "; ".join([
+    "default-src 'none'",
+    "script-src 'none'",
+    "style-src 'unsafe-inline' https://arxiv.org https://static.arxiv.org https://use.typekit.net https://p.typekit.net",
+    "font-src https: data:",
+    "img-src https: data:",
+    "base-uri 'none'",
+    "form-action 'none'",
+    "frame-ancestors 'self'",
+])
+
+
+@router.get("/papers/{key}/html")
+def paper_html(
+    key: str,
+    request: Request,
+    theme: Literal["light", "dark"] = "light",
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    """The paper as arXiv HTML, cut down for the reader. 404 if arXiv has no HTML for it."""
+    paper = get_paper(db, user, key)
+    path = request.app.state.settings.html_dir / f"{key}{paper.version or ''}.html"
+    if path.exists():
+        doc, source = path.read_text(), "cache"
+    else:
+        try:
+            doc = arxiv.fetch_html(paper.arxiv_id, paper.version)
+        except arxiv.NoHtml:
+            raise HTTPException(404, "arXiv has no HTML version of this paper")
+        except arxiv.ArxivError as e:
+            raise HTTPException(502, str(e))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".part")
+        tmp.write_text(doc)
+        tmp.replace(path)
+        source = "arxiv"
+    return HTMLResponse(
+        doc.replace(arxiv.THEME, theme, 1),
+        headers={
+            "Content-Security-Policy": HTML_POLICY,
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, max-age=86400",
+            "X-Html-Source": source,
+        },
+    )
