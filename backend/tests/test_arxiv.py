@@ -17,6 +17,30 @@ from app.arxiv import ArxivNotFound, from_key, parse_feed, parse_id, to_key
         ("cs/0101001", "cs/0101001", None),
         ("https://arxiv.org/abs/hep-th/9901001v2", "hep-th/9901001", "v2"),
         ("math.AG/0101001", "math.AG/0101001", None),
+        # every arXiv page type
+        ("https://arxiv.org/html/2606.12683v1", "2606.12683", "v1"),
+        ("https://arxiv.org/html/2606.12683v1/", "2606.12683", "v1"),
+        ("https://arxiv.org/html/2606.12683v1/#S3.SS2", "2606.12683", "v1"),
+        ("https://arxiv.org/html/2606.12683v1/x1.png", "2606.12683", "v1"),
+        ("https://arxiv.org/html/2606.12683", "2606.12683", None),
+        ("https://arxiv.org/format/2401.12345", "2401.12345", None),
+        ("https://arxiv.org/src/2401.12345v1", "2401.12345", "v1"),
+        ("https://arxiv.org/e-print/2401.12345", "2401.12345", None),
+        ("https://arxiv.org/ps/hep-th/9901001v1", "hep-th/9901001", "v1"),
+        ("https://arxiv.org/pdf/hep-th/9901001v1.pdf", "hep-th/9901001", "v1"),
+        ("https://arxiv.org/html/hep-th/9901001", "hep-th/9901001", None),
+        ("HTTPS://ARXIV.ORG/ABS/2401.12345", "2401.12345", None),
+        ("https://browse.arxiv.org/abs/2401.12345", "2401.12345", None),
+        ("0704.0001", "0704.0001", None),
+        # mirrors and sites that link to arXiv papers
+        ("https://ar5iv.labs.arxiv.org/html/1706.03762", "1706.03762", None),
+        ("https://ar5iv.org/abs/1706.03762", "1706.03762", None),
+        ("https://www.alphaxiv.org/abs/2401.12345v2", "2401.12345", "v2"),
+        ("https://huggingface.co/papers/2401.12345", "2401.12345", None),
+        ("https://doi.org/10.48550/arXiv.2401.12345", "2401.12345", None),
+        ("10.48550/arXiv.2401.12345", "2401.12345", None),
+        ("xxx.lanl.gov/abs/hep-th/9901001", "hep-th/9901001", None),
+        ("arXiv: 2401.12345", "2401.12345", None),
     ],
 )
 def test_parse_id_accepts(raw, arxiv_id, version):
@@ -26,7 +50,12 @@ def test_parse_id_accepts(raw, arxiv_id, version):
 
 
 @pytest.mark.parametrize(
-    "raw", ["", "hello", "https://example.com/abs/2401.12345", "2401.123", "24011.12345", "https://arxiv.org/list/cs.LG"]
+    "raw",
+    [
+        "", "hello", "https://example.com/abs/2401.12345", "2401.123", "24011.12345", "https://arxiv.org/list/cs.LG",
+        "https://arxiv.org/html/", "https://arxiv.org/abs/2401.12345vx", "https://huggingface.co/models/2401.12345",
+        "https://evilarxiv.org/abs/2401.12345", "https://arxiv.org.evil.com/abs/2401.12345",
+    ],
 )
 def test_parse_id_rejects(raw):
     assert parse_id(raw) is None

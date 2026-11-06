@@ -44,3 +44,36 @@ def test_v1_database_moves_to_owner(tmp_path):
         assert db.get(ReadingSession, "s1").user_id == 1
         event = db.get(Event, "e1")
         assert event.user_id == 1 and event.payload == {"page": 1, "active_ms": 9000} and event.reported_at
+
+
+def _sql(path, name: str) -> str:
+    return sqlite3.connect(path).execute("SELECT sql FROM sqlite_master WHERE name = ?", (name,)).fetchone()[0]
+
+
+def test_user_ids_are_never_reused(tmp_path):
+    path = tmp_path / "app.db"
+    make_engine(f"sqlite:///{path}")
+    # Recreate users the way it was before AUTOINCREMENT, with three accounts
+    old = sqlite3.connect(path)
+    old.executescript("""
+        DROP INDEX ix_users_username; DROP TABLE users;
+        CREATE TABLE users (id INTEGER NOT NULL, username VARCHAR NOT NULL, password_hash VARCHAR NOT NULL,
+          is_admin BOOLEAN NOT NULL, created_at DATETIME NOT NULL, PRIMARY KEY (id));
+        CREATE UNIQUE INDEX ix_users_username ON users (username);
+        INSERT INTO users VALUES (1, 'a', '!', 1, '2026-11-01'), (2, 'b', '!', 0, '2026-11-01'),
+          (3, 'c', '!', 0, '2026-11-01');
+    """)
+    old.close()
+
+    engine = make_engine(f"sqlite:///{path}")
+    make_engine(f"sqlite:///{path}")  # second start is a no-op
+    assert "AUTOINCREMENT" in _sql(path, "users")
+    assert "REFERENCES users" in _sql(path, "api_tokens")  # other tables still point at the new table
+    assert _sql(path, "ix_users_username").startswith("CREATE UNIQUE INDEX")
+    with Session(engine) as db:
+        assert [u.username for u in db.exec(select(User).order_by(User.id))] == ["a", "b", "c"]
+        db.delete(db.get(User, 3))
+        db.commit()
+        db.add(User(username="d", password_hash="!"))
+        db.commit()
+        assert db.exec(select(User).where(User.username == "d")).one().id == 4

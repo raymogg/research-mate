@@ -9,10 +9,10 @@ primary_region = "syd"
 [env]
   DATA_DIR = "/data"
   COOKIE_SECURE = "1"
-  # OAuth redirect URIs are built from this; change it with a custom domain.
+  # OAuth redirect URIs are built from this. www and *.fly.dev redirect here.
   # Provider apps are secrets: fly secrets set GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=...
   # (and GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET). See DEPLOY.md.
-  PUBLIC_URL = "https://taste-reader.fly.dev"
+  PUBLIC_URL = "https://researchmate.org"
   # /data/catalog.db (papers + embeddings for suggestions) is built on the GPU
   # machine and uploaded by data_collection/ (`make push` there).
   # INVITE_CODE is a secret: fly secrets set INVITE_CODE=...

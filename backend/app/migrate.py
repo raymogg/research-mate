@@ -6,11 +6,15 @@ admin account "owner" with no usable password; set one with
 
 New columns on existing tables are added in place, using the column's
 server default for existing rows.
+
+`users` is rebuilt with AUTOINCREMENT if it was made without it, so ids of
+deleted accounts aren't reused.
 """
 
 import logging
 
-from sqlalchemy import Engine, text
+from sqlalchemy import Engine, MetaData, text
+from sqlalchemy.schema import CreateTable
 from sqlmodel import SQLModel
 
 log = logging.getLogger(__name__)
@@ -26,6 +30,33 @@ def _columns(conn, table: str) -> list[str]:
 def migrate(engine: Engine) -> None:
     _to_multi_user(engine)
     _add_columns(engine)
+    _users_autoincrement(engine)
+
+
+def _drop_indexes(conn, table: str) -> None:
+    for (name,) in conn.execute(
+        text("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name=:t AND sql IS NOT NULL"), {"t": table}
+    ).all():
+        conn.execute(text(f'DROP INDEX "{name}"'))
+
+
+def _users_autoincrement(engine: Engine) -> None:
+    # SQLite can't add AUTOINCREMENT to a table, so: build a new one, copy, swap.
+    # Renaming the old table first would repoint other tables' foreign keys at it.
+    with engine.begin() as conn:
+        sql = conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'")).scalar()
+        if not sql or "AUTOINCREMENT" in sql.upper():
+            return
+        log.warning("rebuilding users with AUTOINCREMENT")
+        users = SQLModel.metadata.tables["users"]
+        cols = ", ".join(c for c in _columns(conn, "users") if c in users.c)
+        _drop_indexes(conn, "users")
+        conn.execute(CreateTable(users.to_metadata(MetaData(), name="_new_users")))
+        conn.execute(text(f"INSERT INTO _new_users ({cols}) SELECT {cols} FROM users"))
+        conn.execute(text("DROP TABLE users"))
+        conn.execute(text("ALTER TABLE _new_users RENAME TO users"))
+        for index in users.indexes:
+            index.create(conn)
 
 
 def _add_columns(engine: Engine) -> None:
@@ -52,11 +83,7 @@ def _to_multi_user(engine: Engine) -> None:
         log.warning("migrating single-user database: existing data goes to user %r", LEGACY_USERNAME)
         old_cols = {t: _columns(conn, t) for t in _PER_USER}
         for t in _PER_USER:
-            for (name,) in conn.execute(
-                text("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name=:t AND sql IS NOT NULL"),
-                {"t": t},
-            ).all():
-                conn.execute(text(f'DROP INDEX "{name}"'))
+            _drop_indexes(conn, t)
             conn.execute(text(f"ALTER TABLE {t} RENAME TO _old_{t}"))
         conn.execute(text("DROP TABLE IF EXISTS tags"))
         SQLModel.metadata.create_all(conn)

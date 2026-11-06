@@ -1,13 +1,18 @@
-import type { SessionContext, Via } from "../api";
+import type { ReaderView, SessionContext, Via } from "../api";
 
-/** The screen and local time a reading session starts on (D24). */
-export function sessionContext(via: Via): SessionContext {
-  const now = new Date();
+export function deviceKind(): SessionContext["device"] {
   const coarse = window.matchMedia("(pointer: coarse)").matches;
   const shortSide = Math.min(screen.width, screen.height);
+  return !coarse ? "desktop" : shortSide >= 600 ? "tablet" : "phone";
+}
+
+/** The screen and local time a reading session starts on (D24), and the view it opens in. */
+export function sessionContext(via: Via, view: ReaderView): SessionContext {
+  const now = new Date();
   return {
     via,
-    device: !coarse ? "desktop" : shortSide >= 600 ? "tablet" : "phone",
+    view,
+    device: deviceKind(),
     viewport: [window.innerWidth, window.innerHeight],
     screen: [screen.width, screen.height],
     dpr: Math.round(window.devicePixelRatio * 100) / 100,

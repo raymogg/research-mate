@@ -20,15 +20,28 @@ _AUTO_FORWARD = {"unread": {"reading", "read"}, "reading": {"read"}}
 
 @dataclass
 class Rollup:
-    page_ms: dict[int, int] = field(default_factory=dict)
+    page_ms: dict[int, int] = field(default_factory=dict)  # PDF reading
+    section_ms: dict[str, int] = field(default_factory=dict)  # HTML reading
+    section_share: dict[str, float] = field(default_factory=dict)  # each section's share of the HTML
     sessions: int = 0
     return_visits: int = 0
 
     def total_ms(self) -> int:
-        return sum(self.page_ms.values())
+        return sum(self.page_ms.values()) + sum(self.section_ms.values())
 
     def pages_viewed(self, min_s: int) -> int:
         return sum(1 for ms in self.page_ms.values() if ms >= min_s * 1000)
+
+    def html_share_viewed(self, min_s: int) -> float:
+        """Share of the HTML version, by height, in sections read for at least `min_s`."""
+        viewed = sum(self.section_share.get(s, 0) for s, ms in self.section_ms.items() if ms >= min_s * 1000)
+        return min(1.0, round(viewed, 4))
+
+    def completion(self, min_s: int, num_pages: int | None) -> float | None:
+        """How much of the paper was read, 0-1, in whichever format got further."""
+        pdf = self.pages_viewed(min_s) / num_pages if num_pages else None
+        html = self.html_share_viewed(min_s) if self.section_ms else None
+        return max((c for c in (pdf, html) if c is not None), default=None)
 
     def furthest_page(self) -> int | None:
         return max((p for p, ms in self.page_ms.items() if ms > 0), default=None)
@@ -70,6 +83,25 @@ def rollups(
     )
     for uid, arxiv_id, page, ms in dwell:
         out.setdefault((uid, arxiv_id), Rollup()).page_ms[page] = int(ms or 0)
+
+    sections = db.connection().execute(
+        text(
+            f"""
+            SELECT user_id, arxiv_id,
+                   json_extract(payload, '$.section') AS section,
+                   SUM(json_extract(payload, '$.active_ms')) AS ms,
+                   MAX(json_extract(payload, '$.share')) AS share
+            FROM events
+            WHERE type = 'section_dwell' {where}
+            GROUP BY user_id, arxiv_id, section
+            """
+        ),
+        params,
+    )
+    for uid, arxiv_id, section, ms, share in sections:
+        r = out.setdefault((uid, arxiv_id), Rollup())
+        r.section_ms[section] = int(ms or 0)
+        r.section_share[section] = float(share or 0)
 
     visits = db.connection().execute(
         text(
@@ -143,7 +175,7 @@ def last_activity(db: Session, user_id: int, arxiv_id: str) -> datetime | None:
         select(func.max(Event.ts)).where(
             Event.user_id == user_id,
             Event.arxiv_id == arxiv_id,
-            Event.type.in_(("paper_opened", "page_dwell", "paper_closed")),
+            Event.type.in_(("paper_opened", "page_dwell", "section_dwell", "paper_closed")),
         )
     ).one()
     last_end = db.exec(
@@ -184,11 +216,10 @@ def start_session(db: Session, settings: Settings, paper: Paper, context: dict |
 
 
 def check_completion(db: Session, settings: Settings, paper: Paper) -> None:
-    """Emit `completion_reached` once, and auto-mark Read when allowed."""
-    if not paper.num_pages:
-        return
-    viewed = rollup(db, paper.user_id, paper.arxiv_id).pages_viewed(settings.page_viewed_min_s)
-    if viewed / paper.num_pages < settings.auto_read_threshold:
+    """Emit `completion_reached` once, and auto-mark Read when allowed. PDF and HTML both count."""
+    r = rollup(db, paper.user_id, paper.arxiv_id)
+    done = r.completion(settings.page_viewed_min_s, paper.num_pages)
+    if done is None or done < settings.auto_read_threshold:
         return
     already = db.exec(
         select(Event.event_id).where(
@@ -197,7 +228,8 @@ def check_completion(db: Session, settings: Settings, paper: Paper) -> None:
     ).first()
     if already:
         return
-    record_event(
-        db, paper.user_id, paper.arxiv_id, "completion_reached", {"pages_viewed": viewed, "num_pages": paper.num_pages}
-    )
+    payload = {"pages_viewed": r.pages_viewed(settings.page_viewed_min_s), "num_pages": paper.num_pages}
+    if r.section_ms:
+        payload["html_share_viewed"] = r.html_share_viewed(settings.page_viewed_min_s)
+    record_event(db, paper.user_id, paper.arxiv_id, "completion_reached", payload)
     set_status(db, paper, "read", "auto")

@@ -10,7 +10,9 @@ from .test_api import dwell, open_session, send
 
 
 def test_catalog_covers_client_types():
-    assert CLIENT_EVENT_TYPES == {"page_dwell", "paper_closed", "text_copied", "impression", "zoom_changed"}
+    assert CLIENT_EVENT_TYPES == {
+        "page_dwell", "section_dwell", "paper_closed", "text_copied", "impression", "zoom_changed", "view_changed"
+    }
     assert all({"source", "description", "payload"} <= set(spec) for spec in EVENT_CATALOG.values())
 
 

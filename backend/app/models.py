@@ -14,7 +14,12 @@ STATUSES = ("unread", "reading", "read", "skimmed", "abandoned")
 #      `source`; paper_opened adds `context` (how the user got there, device,
 #      viewport, local time)
 #   4: paper_added adds `intent` ("open", or "later" when saved without opening)
-SCHEMA_VERSION = 4
+#   5: the HTML reader. New types section_dwell (reading time per section of
+#      arXiv's HTML, the counterpart of page_dwell) and view_changed;
+#      paper_opened context adds `view` (pdf or html); zoom_changed and
+#      text_copied may name a `section` instead of a page; completion_reached
+#      can come from sections read
+SCHEMA_VERSION = 5
 
 # none: never asked (papers first opened before feedback existed);
 # pending: opened once, waiting for answers; done / skipped: asked
@@ -40,6 +45,8 @@ def iso(dt: datetime | None) -> str | None:
 
 class User(SQLModel, table=True):
     __tablename__ = "users"
+    # A deleted account's id is never handed out again, so copies kept outside the app can't mix two people.
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: int | None = Field(default=None, primary_key=True)
     username: str = Field(unique=True, index=True)  # stored lowercased

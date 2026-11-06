@@ -39,6 +39,24 @@ make prod-user ARGS="passwd owner"   # local data belongs to the admin "owner"
 make prod-user ARGS="rename owner <you>"
 ```
 
+## Custom domain
+
+The app is served at `https://researchmate.org`. `PUBLIC_URL` in `fly.toml`
+must match it. Requests to `www.researchmate.org` and `*.fly.dev` get a
+permanent redirect to it, because session and OAuth cookies only work on one host.
+
+Fly issues the certificates (`fly certs add researchmate.org` and
+`fly certs add www.researchmate.org`, already done). DNS is at GoDaddy:
+
+| Type  | Name  | Value                     |
+|-------|-------|---------------------------|
+| A     | `@`   | `66.241.124.163`          |
+| AAAA  | `@`   | `2a09:8280:1::1e1:4a04:0` |
+| CNAME | `www` | `taste-reader.fly.dev`    |
+
+Check with `fly certs check researchmate.org` (and `www.researchmate.org`)
+until both say Issued. `fly ips list` shows the addresses if they change.
+
 ## Sign in with Google and GitHub
 
 Each provider needs an OAuth app. Its callback URL is
@@ -52,13 +70,13 @@ Each provider needs an OAuth app. Its callback URL is
 3. Publish the app. While it's "Testing", only listed test users can sign in.
 4. Go to Credentials → Create credentials → OAuth client ID → Web application.
 5. Under authorised redirect URIs, add
-   `https://taste-reader.fly.dev/api/auth/oauth/google/callback`.
+   `https://researchmate.org/api/auth/oauth/google/callback`.
 6. Run `fly secrets set GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=...`
 
 **GitHub:**
 1. Go to Settings → Developer settings → OAuth Apps → New OAuth App.
-2. Set the homepage to `https://taste-reader.fly.dev` and the callback to
-   `https://taste-reader.fly.dev/api/auth/oauth/github/callback`.
+2. Set the homepage to `https://researchmate.org` and the callback to
+   `https://researchmate.org/api/auth/oauth/github/callback`.
 3. Run `fly secrets set GITHUB_CLIENT_ID=... GITHUB_CLIENT_SECRET=...`
 
 **Local testing:** create a second OAuth app per provider, with the callback
