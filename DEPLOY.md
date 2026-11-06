@@ -67,6 +67,7 @@ Each provider needs an OAuth app. Its callback URL is
 1. In Google Cloud console, go to APIs & Services → OAuth consent screen.
 2. Choose External, and add the app name, a support email and the scopes
    `openid`, `email` and `profile`. These basic scopes need no Google review.
+   Use `https://researchmate.org/privacy` as the privacy policy link.
 3. Publish the app. While it's "Testing", only listed test users can sign in.
 4. Go to Credentials → Create credentials → OAuth client ID → Web application.
 5. Under authorised redirect URIs, add

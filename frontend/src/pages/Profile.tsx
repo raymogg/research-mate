@@ -105,7 +105,7 @@ export function Profile() {
         <h2>Your data</h2>
         <p className="muted small">
           What the reader has recorded about you: your library and how you read it. Only you and the site's admins
-          can see it.
+          can see it. The <a href="/privacy">privacy policy</a> explains what it's used for.
         </p>
         <div className="tiles">
           <Tile label="Papers in your library" value={d.papers} />

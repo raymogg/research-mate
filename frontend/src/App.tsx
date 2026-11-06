@@ -4,6 +4,7 @@ import { api, ApiError, SIGNED_OUT, type ClientConfig, type User } from "./api";
 import { Admin } from "./pages/Admin";
 import { Library } from "./pages/Library";
 import { Login } from "./pages/Login";
+import { Privacy } from "./pages/Privacy";
 import { Profile } from "./pages/Profile";
 import { Reader } from "./pages/Reader";
 import { PaperQuestions } from "./components/PaperQuestions";
@@ -58,6 +59,7 @@ export function App() {
     setUser(null);
   }, [base]);
 
+  if (window.location.pathname === "/privacy") return <Privacy />; // readable signed out
   if (error) return <div className="page-message">{error}</div>;
   if (!base || user === undefined) return <div className="page-message">Loading…</div>;
   if (user === null) return <Login signupOpen={base.config.signup_open} providers={base.config.providers} onSignedIn={signIn} />;

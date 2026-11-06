@@ -131,6 +131,10 @@ export function Login({
             {signup ? "Have an account? Sign in" : "Have an invite code? Create an account"}
           </button>
         )}
+        <p className="muted small">
+          {signup ? "By creating an account you agree to how we handle your data, set out in our " : "How we handle your data: "}
+          <a href="/privacy">privacy policy</a>.
+        </p>
       </form>
     </div>
   );
