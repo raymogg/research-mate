@@ -24,7 +24,7 @@ make test      # backend tests + frontend typecheck
 
 Open http://localhost:5173 while developing. Dev data also goes to `./data`.
 
-**Accounts.** Every page needs a signed-in user, and each user's library and events are separate. Sign up on the sign-in page with the invite code (`dev` locally; set `INVITE_CODE` to change it). Or create accounts from the terminal: `make user ARGS="add alice"`, `make user ARGS="list"`, `make user ARGS="passwd alice"`, `make user ARGS="admin alice"`. Only admins can see `/admin`. Data from before accounts existed belongs to the admin `owner`; give it a password with `make user ARGS="passwd owner"` (and `ARGS="rename owner <you>"` if you like).
+**Accounts.** Signing in is with Google or GitHub only (set up a dev OAuth app per provider, see DEPLOY.md, and run `GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... make dev`). The first sign-in creates the account. Each user's library and events are separate. Signed out, visitors can read the five starter papers in `backend/app/starter.py`, and nothing is recorded. From the terminal: `make user ARGS="list"`, `make user ARGS="admin alice"`, `make user ARGS="rename alice alicia"`. Only admins can see `/admin`. Data from before accounts existed belongs to the admin `owner`: sign in once, which makes a new empty account, then `make user ARGS="move-signins <new> owner"`.
 
 ## How it works
 
@@ -50,17 +50,18 @@ The event catalog (`EVENT_CATALOG` in `backend/app/events.py`) is the single des
 
 ## Configuration
 
-Environment variables (defaults in brackets): `IDLE_CUTOFF_S` (60), `RETURN_VISIT_GAP_MIN` (30), `PAGE_VIEWED_MIN_S` (5), `AUTO_READ_THRESHOLD` (0.8), `FLUSH_INTERVAL_S` (15), `FEEDBACK_URL` (`http://127.0.0.1:8000/feedback/events`), `DATA_DIR` (`./data`; `/data` in Docker), `INVITE_CODE` (empty = sign-up closed; `make dev` uses `dev`), `COOKIE_SECURE` (`0`; set `1` behind HTTPS), `LOGIN_DAYS` (30).
+Environment variables (defaults in brackets): `IDLE_CUTOFF_S` (60), `RETURN_VISIT_GAP_MIN` (30), `PAGE_VIEWED_MIN_S` (5), `AUTO_READ_THRESHOLD` (0.8), `FLUSH_INTERVAL_S` (15), `FEEDBACK_URL` (`http://127.0.0.1:8000/feedback/events`), `DATA_DIR` (`./data`; `/data` in Docker), `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` and `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` (sign-in), `PUBLIC_URL`, `COOKIE_SECURE` (`0`; set `1` behind HTTPS), `LOGIN_DAYS` (30).
 
 ## API
 
-All `/api` routes except `/api/config` and `/api/auth/*` need a signed-in user, and act on that user's data.
+All `/api` routes except `/api/config`, `/api/auth/*` and `/api/starter/*` need a signed-in user, and act on that user's data.
 
 | Method and path | Purpose |
 |---|---|
-| `POST /api/auth/signup` `{username, password, invite_code}` | Create an account and sign in |
-| `POST /api/auth/login` `{username, password}`, `POST /api/auth/logout`, `GET /api/auth/me` | Session cookie |
-| `POST /api/papers` `{input, source?}` | Add by arXiv URL or ID (201 new, 200 existing); `source` is where they found it |
+| `POST /api/auth/oauth/{google,github}/start` `{mode: login\|link}` | Where to send the browser to sign in; a first sign-in creates the account |
+| `POST /api/auth/logout`, `GET /api/auth/me` | Session cookie |
+| `GET /api/starter`, `GET /api/starter/{key}/pdf\|html` | Starter papers, open to visitors; nothing recorded |
+| `POST /api/papers` `{input, source?, intent?}` | Add by arXiv URL or ID (201 new, 200 existing); `source` is where they found it, or `suggested` from the starter shelf |
 | `GET /api/papers?status=&tag=&min_rating=&sort=` | List with metrics. Repeat `tag` to require several |
 | `GET /api/papers/{key}` | One paper with per-page dwell |
 | `PATCH /api/papers/{key}` | `{status?, rating?, prompted?, rating_prompted?, num_pages?}` |

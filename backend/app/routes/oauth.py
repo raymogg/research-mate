@@ -1,9 +1,7 @@
 """Routes for "Continue with Google / GitHub". The flow is described in oauth.py.
 
-Three modes, chosen when the browser starts:
-- login: a known account signs in; an unknown one is turned away.
-- signup: as login, but an unknown account becomes a new user. Needs the
-  invite code, checked here before leaving for the provider.
+Two modes, chosen when the browser starts:
+- login: a known account signs in; an unknown one becomes a new user.
 - link: attaches the account to the signed-in user (from the profile page).
 
 The callback always ends in a redirect: to the library, or to the profile page
@@ -17,7 +15,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlmodel import Session
 
 from .. import auth, oauth
@@ -49,8 +47,7 @@ def _redirect_uri(request: Request, name: str) -> str:
 
 
 class Start(BaseModel):
-    mode: Literal["login", "signup", "link"] = "login"
-    invite_code: str = Field(default="", max_length=256)
+    mode: Literal["login", "link"] = "login"
 
 
 @router.post("/{name}/start")
@@ -58,14 +55,7 @@ def start(name: str, body: Start, request: Request, db: Session = Depends(get_db
     """Returns the provider URL to send the browser to, and sets the state cookie."""
     provider, (client_id, _) = _provider(request, name)
     settings = request.app.state.settings
-    user_id = None
-    if body.mode == "link":
-        user_id = auth.current_user(request, db).id
-    elif body.mode == "signup":
-        if not settings.invite_code:
-            raise HTTPException(403, "Sign-up is closed")
-        if not secrets.compare_digest(body.invite_code.strip().encode(), settings.invite_code.encode()):
-            raise HTTPException(403, "That invite code isn't right")
+    user_id = auth.current_user(request, db).id if body.mode == "link" else None
     state, verifier = secrets.token_urlsafe(32), oauth.new_verifier()
     db.add(OAuthAttempt(
         state_hash=_hash(state), provider=name, mode=body.mode, verifier=verifier, user_id=user_id,
@@ -73,8 +63,8 @@ def start(name: str, body: Start, request: Request, db: Session = Depends(get_db
     ))
     db.commit()
     url = oauth.authorize_url(provider, client_id, _redirect_uri(request, name), state, verifier)
-    # A JSON answer rather than a redirect, so the invite code travels in a POST
-    # body; the browser then navigates to `url` itself
+    # A JSON answer rather than a redirect: a POST can't be started by another
+    # site's link. The browser then navigates to `url` itself
     resp = JSONResponse({"url": url})
     resp.set_cookie(
         COOKIE, state, max_age=ATTEMPT_MINUTES * 60, httponly=True, secure=settings.cookie_secure, samesite="lax",
@@ -132,9 +122,7 @@ def callback(
         db.commit()
         return done(home)
 
-    if identity is None:
-        if mode != "signup":
-            return done(home, "no_account")
+    if identity is None:  # first sign-in: a new account
         user = auth.create_provider_user(db, profile.username_hint)
         identity = Identity(provider=name, subject=profile.subject, user_id=user.id)
     else:

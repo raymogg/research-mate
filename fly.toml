@@ -15,7 +15,6 @@ primary_region = "syd"
   PUBLIC_URL = "https://researchmate.org"
   # /data/catalog.db (papers + embeddings for suggestions) is built on the GPU
   # machine and uploaded by data_collection/ (`make push` there).
-  # INVITE_CODE is a secret: fly secrets set INVITE_CODE=...
 
 [[mounts]]
   source = "taste_data"

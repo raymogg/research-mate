@@ -2,12 +2,8 @@ from sqlmodel import Session, select
 
 from app.models import Event, Login
 
-from .conftest import PASSWORD, dwell
+from .conftest import dwell
 from .test_api import open_session, send
-
-
-def signup(c, username="bob", password=PASSWORD, code="letmein"):
-    return c.post("/api/auth/signup", json={"username": username, "password": password, "invite_code": code})
 
 
 def test_api_requires_sign_in(anon):
@@ -21,37 +17,23 @@ def test_api_requires_sign_in(anon):
         ("get", "/api/auth/me"),
     ]:
         assert getattr(anon, method)(path).status_code == 401, path
-    assert anon.get("/api/config").json()["signup_open"] is True
 
 
-def test_signup_needs_the_invite_code(anon):
-    assert signup(anon, code="nope").status_code == 403
-    assert signup(anon, password="short").status_code == 400
-    assert signup(anon, username="no spaces").status_code == 400
-    resp = signup(anon, username="  Bob ")
-    assert resp.status_code == 201 and resp.json() == {"id": 1, "username": "bob", "is_admin": False}
-    assert anon.get("/api/auth/me").json()["username"] == "bob"  # signed in straight away
-    assert signup(anon, username="BOB").json()["detail"] == "That username is taken"
+def test_passwords_are_gone(anon):
+    assert anon.post("/api/auth/login", json={"username": "bob", "password": "x" * 10}).status_code in (404, 405)
+    assert anon.post("/api/auth/signup", json={"username": "bob", "password": "x" * 10}).status_code in (404, 405)
 
 
-def test_signup_closed_without_code(anon, app):
-    app.state.settings.invite_code = ""
-    assert signup(anon).status_code == 403
-    assert anon.get("/api/config").json()["signup_open"] is False
-
-
-def test_login_logout(anon, app):
-    signup(anon)
-    anon.post("/api/auth/logout")
-    assert anon.get("/api/auth/me").status_code == 401
-    assert anon.post("/api/auth/login", json={"username": "bob", "password": "wrong"}).status_code == 401
-    assert anon.post("/api/auth/login", json={"username": "nobody", "password": "wrong"}).status_code == 401
-    assert anon.post("/api/auth/login", json={"username": "Bob", "password": PASSWORD}).status_code == 200
-    assert anon.get("/api/auth/me").status_code == 200
+def test_logout(make_client, app):
+    c = make_client("bob")
+    token = c.cookies.get("taste_login")
     with Session(app.state.engine) as db:
-        token = anon.cookies.get("taste_login")
         stored = [login.token_hash for login in db.exec(select(Login))]
         assert token not in stored and len(stored) == 1  # only the hash is kept
+    c.post("/api/auth/logout")
+    assert c.get("/api/auth/me").status_code == 401
+    with Session(app.state.engine) as db:
+        assert db.exec(select(Login)).all() == []
 
 
 def test_admin_only_for_admins(make_client):

@@ -76,7 +76,8 @@ def get_paper(db: Session, user: User, key: str) -> Paper:
 
 class AddPaper(BaseModel):
     input: str = Field(min_length=1, max_length=500)
-    source: Literal[DISCOVERY_SOURCES] | None = None  # where they found it, if they said
+    # Where they found it, if they said. "suggested": added from our starter shelf.
+    source: Literal[DISCOVERY_SOURCES + ("suggested",)] | None = None
     intent: Literal[ADD_INTENTS] = "open"  # "later": saved to read later, not opened now
 
 
@@ -251,11 +252,16 @@ def open_session(
 @router.get("/papers/{key}/pdf")
 def paper_pdf(key: str, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
     paper = get_paper(db, user, key)
-    path = request.app.state.settings.pdf_dir / f"{key}{paper.version or ''}.pdf"
+    return serve_pdf(request.app.state.settings, paper.arxiv_id, paper.version)
+
+
+def serve_pdf(settings, arxiv_id: str, version: str | None):
+    """A paper's PDF from the cache, or streamed from arXiv into it."""
+    path = settings.pdf_dir / f"{arxiv.to_key(arxiv_id)}{version or ''}.pdf"
     if path.exists():
         return FileResponse(path, media_type="application/pdf", headers={"X-Pdf-Source": "cache"})
     try:
-        size, body = arxiv.stream_pdf(paper.arxiv_id, paper.version, path)
+        size, body = arxiv.stream_pdf(arxiv_id, version, path)
     except arxiv.ArxivError as e:
         raise HTTPException(502, str(e))
     headers = {"X-Pdf-Source": "arxiv"}
@@ -288,12 +294,16 @@ def paper_html(
 ):
     """The paper as arXiv HTML, cut down for the reader. 404 if arXiv has no HTML for it."""
     paper = get_paper(db, user, key)
-    path = request.app.state.settings.html_dir / f"{key}{paper.version or ''}.html"
+    return serve_html(request.app.state.settings, paper.arxiv_id, paper.version, theme)
+
+
+def serve_html(settings, arxiv_id: str, version: str | None, theme: str):
+    path = settings.html_dir / f"{arxiv.to_key(arxiv_id)}{version or ''}.html"
     if path.exists():
         doc, source = path.read_text(), "cache"
     else:
         try:
-            doc = arxiv.fetch_html(paper.arxiv_id, paper.version)
+            doc = arxiv.fetch_html(arxiv_id, version)
         except arxiv.NoHtml:
             raise HTTPException(404, "arXiv has no HTML version of this paper")
         except arxiv.ArxivError as e:

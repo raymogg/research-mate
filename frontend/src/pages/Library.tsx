@@ -1,6 +1,6 @@
-import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { useApp } from "../App";
+import { type Starter, useApp, useUser } from "../App";
 import {
   api,
   DISCOVERY_SOURCES,
@@ -10,8 +10,10 @@ import {
   type SortKey,
   STATUSES,
   type Status,
+  type StarterPaper,
 } from "../api";
 import { RatingStars } from "../components/RatingStars";
+import { StarterShelf } from "../components/StarterShelf";
 import { STATUS_LABELS, StatusSelect } from "../components/StatusSelect";
 import { TagInput } from "../components/TagInput";
 import { ago, authorLine, duration } from "../format";
@@ -52,6 +54,86 @@ function librarySlate(papers: Paper[], params: URLSearchParams): Slate {
   };
 }
 
+/** The starter shelf as a slate of suggestions (only the papers still to add). */
+function starterSlate(starter: Starter, papers: StarterPaper[]): Slate {
+  return {
+    id: crypto.randomUUID(),
+    list: "suggested",
+    filters: {},
+    policy: starter.policy,
+    purpose: "curriculum",
+    items: papers.map((p) => ({ arxiv_id: p.arxiv_id })),
+  };
+}
+
+/**
+ * Starter papers for someone who hasn't added a paper of their own yet: shown
+ * until they do, or until they've added all five.
+ */
+function StarterSuggestions({ library, onSaved }: { library: Paper[]; onSaved: () => void }) {
+  const { buffer, config, starter } = useApp();
+  const navigate = useNavigate();
+  const list = useRef<HTMLOListElement>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const starterIds = new Set(starter?.papers.map((p) => p.arxiv_id));
+  const ownPapers = library.some((p) => !starterIds.has(p.arxiv_id));
+  const have = new Set(library.map((p) => p.arxiv_id));
+  const todo = useMemo(
+    () => (starter && !ownPapers ? starter.papers.filter((p) => !have.has(p.arxiv_id)) : []),
+    // `have` is rebuilt every render; its contents are what matter
+    [starter, ownPapers, [...have].join(",")],
+  );
+  // A new slate (and new impressions) only when the shelf's contents change
+  const slate = useMemo(() => (starter && todo.length ? starterSlate(starter, todo) : null), [starter, todo]);
+
+  useEffect(() => {
+    if (!slate || !list.current) return;
+    const tracker = new ImpressionTracker(buffer, eventConfig(config), slate, list.current);
+    return () => tracker.stop();
+  }, [slate, buffer, config]);
+
+  if (!slate) return null;
+
+  const add = async (p: StarterPaper, position: number, intent: "open" | "later") => {
+    setBusy(p.arxiv_id);
+    setError(null);
+    try {
+      const paper = await api.addPaper(p.arxiv_id, "suggested", intent);
+      if (intent === "open") {
+        navigate(`/paper/${paper.key}`, { state: { via: { kind: "library", slate_id: slate.id, position } } });
+        return;
+      }
+      onSaved();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+    setBusy(null);
+  };
+
+  return (
+    <section className="starter-suggestions">
+      <h2>{library.length ? "More to start with" : "Not sure where to start?"}</h2>
+      <p className="muted small">The papers behind today's large language models, in reading order.</p>
+      <StarterShelf
+        papers={todo}
+        listRef={list}
+        onOpen={(p, i) => void add(p, i, "open")}
+        actions={(p, i) => (
+          <button className="secondary" disabled={busy !== null} onClick={() => void add(p, i, "later")}>
+            {busy === p.arxiv_id ? "Saving…" : "Save for later"}
+          </button>
+        )}
+      />
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
 export function Library() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -85,7 +167,8 @@ export function Library() {
   useEffect(refresh, [refresh]);
 
   // The reader's last flush can land after this page loads; pick up its numbers.
-  const { buffer, config, user, signOut } = useApp();
+  const { buffer, config, signOut } = useApp();
+  const user = useUser();
   useEffect(
     () =>
       buffer.onPapers((updated) => {
@@ -293,6 +376,8 @@ export function Library() {
           </select>
         </label>
       </div>
+
+      {papers !== null && !filtered && !later && <StarterSuggestions library={papers} onSaved={refresh} />}
 
       {papers === null ? (
         <p className="muted">Loading…</p>

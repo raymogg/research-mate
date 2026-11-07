@@ -19,6 +19,7 @@ def accounts(app, monkeypatch):
         "ada": oauth.Profile(subject="g-1", email="ada@example.com", username_hint="ada"),
         "ada2": oauth.Profile(subject="g-2", email="ada@example.com", username_hint="ada"),
         "gh": oauth.Profile(subject="77", email=None, username_hint="Ada-L"),
+        "ada3": oauth.Profile(subject="g-3", email="alice@example.com", username_hint="alice"),
     }
     seen = []
 
@@ -32,12 +33,12 @@ def accounts(app, monkeypatch):
     return seen
 
 
-def start(c, provider="google", mode="login", code=""):
-    return c.post(f"/api/auth/oauth/{provider}/start", json={"mode": mode, "invite_code": code})
+def start(c, provider="google", mode="login"):
+    return c.post(f"/api/auth/oauth/{provider}/start", json={"mode": mode})
 
 
-def sign_in(c, code, provider="google", mode="login", invite="letmein"):
-    resp = start(c, provider, mode, invite)
+def sign_in(c, code, provider="google", mode="login"):
+    resp = start(c, provider, mode)
     assert resp.status_code == 200, resp.text
     state = parse_qs(urlparse(resp.json()["url"]).query)["state"][0]
     return c.get(f"/api/auth/oauth/{provider}/callback?code={code}&state={state}", follow_redirects=False)
@@ -60,32 +61,29 @@ def test_authorize_url_uses_pkce_and_the_public_url(anon, accounts, app):
     assert q["code_challenge_method"] == "S256" and q["client_id"] == "gid" and q["scope"] == "openid email profile"
 
 
-def test_signup_needs_invite_then_signs_in(anon, accounts, app):
-    assert start(anon, mode="signup", code="nope").status_code == 403
-    assert sign_in(anon, "ada", mode="login").headers["location"] == "/?auth_error=no_account"
-    resp = sign_in(anon, "ada", mode="signup")
+def test_first_sign_in_creates_the_account(anon, accounts, app):
+    assert start(anon, mode="signup").status_code == 422  # no separate sign-up any more
+    resp = sign_in(anon, "ada")
     assert resp.status_code == 303 and resp.headers["location"] == "/"
     me = anon.get("/api/me").json()
-    assert me["username"] == "ada" and me["has_password"] is False
+    assert me["username"] == "ada" and "has_password" not in me
     assert me["identities"][0]["provider"] == "google" and me["identities"][0]["email"] == "ada@example.com"
-    # Same Google account again, from a fresh browser: same user, no invite needed
+    # Same Google account again, from a fresh browser: same user
     other = TestClient(app)
     assert sign_in(other, "ada").headers["location"] == "/"
     assert other.get("/api/me").json()["id"] == me["id"]
     # A second Google account with the same email is a different account, not a takeover
     third = TestClient(app)
-    sign_in(third, "ada2", mode="signup")
+    sign_in(third, "ada2")
     assert third.get("/api/me").json()["username"] == "ada-2"
     # GitHub logins become valid usernames
     gh = TestClient(app)
-    sign_in(gh, "gh", provider="github", mode="signup")
+    sign_in(gh, "gh", provider="github")
     assert gh.get("/api/me").json()["username"] == "ada-l"
-    app.state.settings.invite_code = ""
-    assert start(TestClient(app), mode="signup", code="").status_code == 403
 
 
 def test_callback_rejects_forged_reused_or_expired_state(anon, accounts, app):
-    sign_in(anon, "ada", mode="signup")
+    sign_in(anon, "ada")
     attacker = TestClient(app)
     resp = start(attacker)
     state = parse_qs(urlparse(resp.json()["url"]).query)["state"][0]
@@ -114,7 +112,7 @@ def test_callback_rejects_forged_reused_or_expired_state(anon, accounts, app):
 
 
 def test_provider_errors_and_cancelling(anon, accounts):
-    assert sign_in(anon, "bad-code", mode="signup").headers["location"] == "/?auth_error=provider"
+    assert sign_in(anon, "bad-code").headers["location"] == "/?auth_error=provider"
     resp = start(anon)
     state = parse_qs(urlparse(resp.json()["url"]).query)["state"][0]
     r = anon.get(f"/api/auth/oauth/google/callback?error=access_denied&state={state}", follow_redirects=False)
@@ -134,11 +132,39 @@ def test_link_and_unlink_from_the_profile(client, accounts, anon, app):
 
     # Someone else's Google account can't be linked to alice
     ada = TestClient(app)
-    sign_in(ada, "ada", mode="signup")
+    sign_in(ada, "ada")
     assert sign_in(client, "ada", mode="link").headers["location"] == "/profile?auth_error=taken"
 
-    # ada has only Google, so she can't remove it; alice has a password, so she can
+    # The last way to sign in can't be removed
     assert ada.delete("/api/me/identities/google").status_code == 400
     assert client.delete("/api/me/identities/google").status_code == 404
+    assert client.delete("/api/me/identities/github").status_code == 400
+    sign_in(client, "ada3", mode="link")
     assert client.delete("/api/me/identities/github").status_code == 204
-    assert client.get("/api/me").json()["identities"] == []
+    assert [i["provider"] for i in client.get("/api/me").json()["identities"]] == ["google"]
+
+
+def test_old_accounts_take_over_a_new_sign_in(client, accounts, app):
+    """How a pre-OAuth account (alice, no sign-ins) gets one: sign in, then move it over."""
+    import pytest
+
+    from app import cli
+    from app.models import Paper, User
+
+    new = TestClient(app)
+    sign_in(new, "ada")
+    with Session(app.state.engine) as db:
+        ada, alice = (db.exec(select(User).where(User.username == n)).one() for n in ("ada", "alice"))
+        new.post("/api/papers", json={"input": "2401.12345"})
+        with pytest.raises(ValueError, match="has papers"):
+            cli.move_signins(db, app.state.settings, ada, alice)
+        for p in db.exec(select(Paper).where(Paper.user_id == ada.id)):
+            db.delete(p)
+        db.commit()
+        with pytest.raises(ValueError, match="no Google or GitHub"):
+            cli.move_signins(db, app.state.settings, alice, ada)
+        cli.move_signins(db, app.state.settings, ada, alice)
+        assert db.exec(select(User).where(User.username == "ada")).first() is None
+    browser = TestClient(app)
+    sign_in(browser, "ada")
+    assert browser.get("/api/auth/me").json()["username"] == "alice"

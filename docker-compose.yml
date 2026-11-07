@@ -5,7 +5,10 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - INVITE_CODE=${INVITE_CODE:-dev}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
     volumes:
       - ./data:/data
     restart: unless-stopped

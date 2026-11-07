@@ -1,8 +1,8 @@
 """Schema upgrades that `create_all` can't do on its own.
 
 v1 -> v2 (multi-user): every row gains a user_id. Existing data goes to a new
-admin account "owner" with no usable password; set one with
-`python -m app.cli user passwd owner`.
+admin account "owner" with no way to sign in. Sign in with Google or GitHub
+once, then `python -m app.cli user move-signins <new> owner`.
 
 New columns on existing tables are added in place, using the column's
 server default for existing rows.

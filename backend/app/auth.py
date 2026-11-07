@@ -1,13 +1,11 @@
-"""Accounts, invite-code sign-up, cookie logins and export API tokens.
+"""Accounts, cookie logins and export API tokens.
 
-Accounts sign in with a password, or with Google or GitHub (see oauth.py).
-Passwords are hashed with stdlib scrypt. The login cookie and API tokens are
-random; the database stores only their SHA-256, so a leaked database can't be
-replayed.
+Accounts sign in with Google or GitHub only (see oauth.py); there are no
+passwords. The login cookie and API tokens are random; the database stores only
+their SHA-256, so a leaked database can't be replayed.
 """
 
 import hashlib
-import hmac
 import re
 import secrets
 from datetime import timedelta
@@ -20,33 +18,10 @@ from .models import ApiToken, Login, User, utcnow
 
 COOKIE = "taste_login"
 USERNAME_RE = re.compile(r"^[a-z0-9_.-]{3,32}$")
-MIN_PASSWORD = 8
-NO_PASSWORD = "!"  # password_hash of accounts that sign in through a provider only
+# password_hash of every account. Passwords are gone; older accounts may still
+# hold a hash, which nothing reads.
+NO_PASSWORD = "!"
 TOKEN_PREFIX = "trk_"
-_SCRYPT = {"n": 2**14, "r": 8, "p": 1}
-
-
-def hash_password(password: str) -> str:
-    salt = secrets.token_bytes(16)
-    digest = hashlib.scrypt(password.encode(), salt=salt, **_SCRYPT)
-    return f"scrypt${salt.hex()}${digest.hex()}"
-
-
-def has_password(user: User) -> bool:
-    return user.password_hash.startswith("scrypt$")
-
-
-def check_password(password: str, stored: str) -> bool:
-    try:
-        _, salt, digest = stored.split("$")
-    except ValueError:
-        return False
-    actual = hashlib.scrypt(password.encode(), salt=bytes.fromhex(salt), **_SCRYPT)
-    return hmac.compare_digest(actual.hex(), digest)
-
-
-# Compared against when the username doesn't exist, so timing doesn't reveal which usernames do.
-_DUMMY_HASH = hash_password(secrets.token_hex(8))
 
 
 def normalise_username(username: str) -> str:
@@ -56,18 +31,12 @@ def normalise_username(username: str) -> str:
     return name
 
 
-def check_new_password(password: str) -> None:
-    if len(password) < MIN_PASSWORD:
-        raise ValueError(f"Passwords need at least {MIN_PASSWORD} characters")
-
-
-def create_user(db: Session, username: str, password: str, is_admin: bool = False) -> User:
-    """Raises ValueError for a bad or taken username or a weak password."""
+def create_user(db: Session, username: str, is_admin: bool = False) -> User:
+    """An account with no way to sign in yet (tests). Raises ValueError for a bad or taken username."""
     name = normalise_username(username)
-    check_new_password(password)
     if db.exec(select(User).where(User.username == name)).first():
         raise ValueError("That username is taken")
-    user = User(username=name, password_hash=hash_password(password), is_admin=is_admin)
+    user = User(username=name, password_hash=NO_PASSWORD, is_admin=is_admin)
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -90,12 +59,6 @@ def create_provider_user(db: Session, hint: str) -> User:
     db.add(user)
     db.flush()  # assigns the id; the caller commits with the identity
     return user
-
-
-def authenticate(db: Session, username: str, password: str) -> User | None:
-    user = db.exec(select(User).where(User.username == username.strip().lower())).first()
-    ok = check_password(password, user.password_hash if user else _DUMMY_HASH)
-    return user if user and ok else None
 
 
 def _token_hash(token: str) -> str:

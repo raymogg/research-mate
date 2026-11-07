@@ -20,11 +20,12 @@ fly auth login
 # Edit fly.toml first: set a unique `app` name and your nearest `primary_region`.
 fly apps create <app-name>
 fly volumes create taste_data --size 1 --region <region>
-fly secrets set INVITE_CODE="$(openssl rand -hex 6)"   # note the code: friends need it to sign up
+# Set up Google and GitHub sign-in (below) first: they're the only ways in.
 make deploy                                            # fly deploy --ha=false (one machine: SQLite)
-
-make prod-user ARGS="add <you> --admin"                # prompts for a password
 ```
+
+Then sign in on the site (that creates your account) and make yourself an
+admin: `make prod-user ARGS="admin <you>"`.
 
 Open `https://<app-name>.fly.dev`.
 
@@ -35,7 +36,9 @@ database:
 ```sh
 fly ssh sftp shell        # then: put data/app.db /data/app.db
 fly machine restart
-make prod-user ARGS="passwd owner"   # local data belongs to the admin "owner"
+# Local data belongs to the admin "owner". Sign in on the site once (that makes
+# a new, empty account), then hand its sign-in to owner:
+make prod-user ARGS="move-signins <new-username> owner"
 make prod-user ARGS="rename owner <you>"
 ```
 
@@ -90,12 +93,16 @@ on `http://localhost:5173`. Then run
 `PUBLIC_URL` for you.
 
 **How it works:**
-- Signing in with a provider creates an account only from "Create an
-  account", and only with the invite code. Otherwise an unknown Google or
-  GitHub account is turned away.
-- Existing password accounts link Google or GitHub from their profile page,
-  `/profile`, and can then sign in either way.
+- Google and GitHub are the only ways to sign in; there are no passwords.
+  The first sign-in with an account creates a ResearchMate account. Sign-up
+  is open to anyone.
+- Once signed in, users can link the other provider from `/profile`.
 - Accounts are matched on the provider's account id, never on email.
+- Accounts from before this (they had passwords) can't sign in until they
+  get a provider. The user signs in once, which makes a new empty account,
+  and then you run `make prod-user ARGS="move-signins <new> <old>"`.
+- Visitors who aren't signed in can read the five starter papers
+  (`backend/app/starter.py`). Nothing is recorded for them.
 
 ## Your data: the profile page
 
@@ -115,13 +122,11 @@ no user parameter, so a token can only ever fetch its owner's data.
 
 ## Accounts
 
-- **Self sign-up:** share the URL and the invite code. Sign-up is closed when
-  `INVITE_CODE` is unset. To rotate the code, run
-  `fly secrets set INVITE_CODE=<new>`; existing accounts keep working.
-- **Making accounts yourself:** run `make prod-user ARGS="add alice"` and send
-  them the password.
-- **Other account commands:** `ARGS="list"`, `ARGS="passwd alice"` (also signs
-  them out everywhere), `ARGS="admin alice"` / `ARGS="admin alice --revoke"`.
+- **Sign-up:** open. Anyone who signs in with Google or GitHub gets an
+  account.
+- **Account commands:** `ARGS="list"`, `ARGS="rename alice alicia"`,
+  `ARGS="admin alice"` / `ARGS="admin alice --revoke"`, and
+  `ARGS="move-signins <new> <old>"` (see above).
 
 Only admins see `/admin` and its API.
 

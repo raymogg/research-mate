@@ -26,7 +26,7 @@ export interface Paper {
   rating: number | null;
   rating_prompted: boolean;
   feedback_state: FeedbackState;
-  source: DiscoverySource | null;
+  source: DiscoverySource | "suggested" | null;
   added_at: string;
   last_opened_at: string | null;
   tags: string[];
@@ -53,6 +53,16 @@ export interface Answers {
 /** Where the user found a paper they added. Asked, optional. */
 export const DISCOVERY_SOURCES = ["colleague", "social", "search", "citation", "feed", "other"] as const;
 export type DiscoverySource = (typeof DISCOVERY_SOURCES)[number];
+
+/** A paper anyone can read before signing in. */
+export interface StarterPaper {
+  arxiv_id: string;
+  key: string;
+  title: string;
+  authors: string;
+  year: number;
+  why: string;
+}
 
 /** How a reading session started. Reload, history and typed URLs are all "direct". */
 export type Via =
@@ -93,8 +103,7 @@ export interface ClientConfig {
   page_viewed_min_s: number;
   auto_read_threshold: number;
   flush_interval_s: number;
-  signup_open: boolean;
-  providers: Provider[]; // set up for "Continue with …"
+  providers: Provider[]; // set up for "Continue with …", the only ways to sign in
 }
 
 export type Provider = "google" | "github";
@@ -109,7 +118,6 @@ export interface ApiTokenInfo {
 
 export interface Profile extends User {
   created_at: string;
-  has_password: boolean;
   identities: { provider: Provider; email: string | null; created_at: string; last_used_at: string }[];
   tokens: ApiTokenInfo[];
   data: {
@@ -242,7 +250,7 @@ export interface PaperReading {
   rating: number | null;
   feedback_state: FeedbackState;
   feedback: Answers | null;
-  source: DiscoverySource | null;
+  source: DiscoverySource | "suggested" | null;
   num_pages: number | null;
   total_ms: number;
   visits: number;
@@ -291,13 +299,10 @@ export const api = {
   config: () => request<ClientConfig>("/api/config"),
   auth: {
     me: () => request<User>("/api/auth/me"),
-    login: (username: string, password: string) => request<User>("/api/auth/login", post({ username, password })),
-    signup: (username: string, password: string, invite_code: string) =>
-      request<User>("/api/auth/signup", post({ username, password, invite_code })),
     logout: () => request<void>("/api/auth/logout", { method: "POST" }),
-    /** Where to send the browser to sign in with a provider. */
-    oauthStart: (provider: Provider, mode: "login" | "signup" | "link", invite_code = "") =>
-      request<{ url: string }>(`/api/auth/oauth/${provider}/start`, post({ mode, invite_code })),
+    /** Where to send the browser to sign in with a provider. A first sign-in creates the account. */
+    oauthStart: (provider: Provider, mode: "login" | "link") =>
+      request<{ url: string }>(`/api/auth/oauth/${provider}/start`, post({ mode })),
   },
   me: {
     profile: () => request<Profile>("/api/me"),
@@ -311,7 +316,8 @@ export const api = {
   },
   listPapers: (params: URLSearchParams) => request<Paper[]>(`/api/papers?${params}`),
   getPaper: (key: string) => request<Paper>(`/api/papers/${key}`),
-  addPaper: (input: string, source: DiscoverySource | null, intent: "open" | "later" = "open") =>
+  /** source "suggested": added from the starter shelf. */
+  addPaper: (input: string, source: DiscoverySource | "suggested" | null, intent: "open" | "later" = "open") =>
     request<Paper>("/api/papers", post({ input, source, intent })),
   updatePaper: (
     key: string,
@@ -327,6 +333,12 @@ export const api = {
   listTags: () => request<{ name: string; count: number }[]>("/api/tags"),
   pdfUrl: (key: string) => `/api/papers/${key}/pdf`,
   htmlUrl: (key: string, theme: "light" | "dark") => `/api/papers/${key}/html?theme=${theme}`,
+  /** Open to visitors; nothing is recorded. */
+  starter: {
+    list: () => request<{ policy: string; papers: StarterPaper[] }>("/api/starter"),
+    pdfUrl: (key: string) => `/api/starter/${key}/pdf`,
+    htmlUrl: (key: string, theme: "light" | "dark") => `/api/starter/${key}/html?theme=${theme}`,
+  },
   pendingFeedback: () => request<Paper[]>("/api/feedback/pending"),
   answer: (key: string, body: Answers) => request<Paper>(`/api/papers/${key}/feedback`, post(body)),
   admin: {

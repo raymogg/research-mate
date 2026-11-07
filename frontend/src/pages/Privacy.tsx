@@ -35,13 +35,15 @@ export function Privacy() {
             You can <strong>download</strong> all of it or <strong>delete</strong> all of it at any time from your{" "}
             <a href="/profile">profile page</a>.
           </li>
+          <li>Reading without an account records nothing about you.</li>
         </ul>
       </section>
 
       <section>
         <h2>Who we are</h2>
         <p>
-          ResearchMate (“we”, “us”) is a research project and paper reader at researchmate.org. It's invite only.
+          ResearchMate (“we”, “us”) is a research project and paper reader at researchmate.org. Anyone can read our
+          starter papers without an account; keeping a library needs one.
         </p>
       </section>
 
@@ -49,17 +51,19 @@ export function Privacy() {
         <h2>What we collect</h2>
         <h3>Your account</h3>
         <ul>
-          <li>Your username.</li>
-          <li>Your password, if you set one.</li>
+          <li>Your username, which we make from your email address or GitHub username when you first sign in.</li>
           <li>
-            If you sign in with Google or GitHub: the ID that service gives your account, and your email address.
-            We never see your Google or GitHub password, and we don't ask for access to anything else in those
-            accounts.
+            You sign in with Google or GitHub; we have no passwords. From that service we keep the ID it gives your
+            account, and your email address. We never see your Google or GitHub password, and we don't ask for
+            access to anything else in those accounts.
           </li>
         </ul>
         <h3>Your library</h3>
         <ul>
-          <li>The papers you add, the link you pasted, and where you said you found the paper.</li>
+          <li>
+            The papers you add, the link you pasted, and where you said you found the paper (or that it came from our
+            suggestions).
+          </li>
           <li>Your tags, reading statuses and ratings.</li>
           <li>Your answers to the short questions we ask after you read a paper.</li>
         </ul>
@@ -81,11 +85,21 @@ export function Privacy() {
             your local hour and day of the week, and your time zone.
           </li>
         </ul>
+        <h3>If you read without an account</h3>
+        <p>
+          Nothing. We don't record which papers you open or how you read them, and we don't set any cookies until
+          you sign in.
+        </p>
         <h3>What we don't collect</h3>
         <p>
           We don't store your IP address or location with your data. We don't record your keystrokes, your screen
           or the text you copy. We don't use advertising or analytics trackers, and we don't track you on other
           websites.
+        </p>
+        <p>
+          Like any web server, ours keeps short-lived technical logs of requests, which include IP addresses. We
+          use them only to keep the site running and fix problems, never for research, and we don't link them to
+          your account's data.
         </p>
       </section>
 
@@ -148,8 +162,9 @@ export function Privacy() {
           <li>A cookie that keeps you signed in.</li>
           <li>A short-lived cookie while you sign in with Google or GitHub. It's deleted when sign-in finishes.</li>
           <li>
-            In your browser: reading activity not yet sent to us, whether you last chose the PDF or HTML view, and
-            your light or dark theme.
+            In your browser: reading activity not yet sent to us, whether you last chose the PDF or HTML view, your
+            light or dark theme, and, if you sign in from a paper you were reading without an account, which paper
+            (so we can add it to your new library; it's removed straight after).
           </li>
         </ul>
       </section>

@@ -46,10 +46,7 @@ def feedback():
 
 @pytest.fixture
 def settings(tmp_path):
-    return Settings(data_dir=tmp_path / "data", static_dir=tmp_path / "no-static", invite_code="letmein")
-
-
-PASSWORD = "correct horse"
+    return Settings(data_dir=tmp_path / "data", static_dir=tmp_path / "no-static")
 
 
 @pytest.fixture
@@ -63,13 +60,15 @@ def app(settings, feedback, monkeypatch):
 
 @pytest.fixture
 def make_client(app):
-    """A client signed in as a new user."""
+    """A client signed in as a new user (as if back from Google or GitHub)."""
 
     def make(username: str, is_admin: bool = False) -> TestClient:
         with Session(app.state.engine) as db:
-            auth.create_user(db, username, PASSWORD, is_admin=is_admin)
+            user = auth.create_user(db, username, is_admin=is_admin)
+            token = auth.start_login(db, user, app.state.settings.login_days)
         c = TestClient(app)
-        assert c.post("/api/auth/login", json={"username": username, "password": PASSWORD}).status_code == 200
+        c.cookies.set(auth.COOKIE, token)
+        assert c.get("/api/auth/me").status_code == 200
         return c
 
     return make
