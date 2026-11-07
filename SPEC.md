@@ -37,7 +37,7 @@ This is the observation layer for the wider research-taste project. Later, these
 | 1 | Idle cutoff and return-visit gap | 60 s idle pauses the clock. A session starting ≥ 30 min after the previous one ended is a return visit. Both are config values. |
 | 2 | How *Read* is set | Automatically, when ≥ 80% of pages have been viewed. The change is logged as a `status_changed` event with `source: "auto"`. I can still override it by hand. |
 | 3 | Tag structure | Plain free text, normalised (trimmed, lowercased). No kinds or prefixes. |
-| 4 | Hosting | One Docker image, run locally or on one Fly.io machine with a volume (see `DEPLOY.md`). SQLite stays. |
+| 4 | Hosting | One Docker image, run locally or on one Fly.io machine with a volume. SQLite stays. |
 | 5 | Explicit feedback | 1–5 rating per paper, part of the reading flow (see §4.4). |
 | 6 | Users and auth | Sign-in with Google or GitHub only (OAuth with PKCE, HttpOnly session cookie); no passwords. The first sign-in creates the account; sign-up is open. Signed-out visitors can read the starter papers, untracked. Each user has a separate library and event stream. Only admins see `/admin`. |
 

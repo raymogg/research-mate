@@ -2,7 +2,7 @@
 
 An arXiv reader that records how each user reads: time per page, total read time, return visits, completion, ratings, status and tags. Events are stored in SQLite and forwarded to a stub feedback API (`feedback.log`), which the research-taste learning backend will replace later.
 
-See [SPEC.md](SPEC.md) for the full spec and [DEPLOY.md](DEPLOY.md) for hosting on Fly.io.
+See [SPEC.md](SPEC.md) for the full spec.
 
 ## Run it (Docker)
 
@@ -24,7 +24,25 @@ make test      # backend tests + frontend typecheck
 
 Open http://localhost:5173 while developing. Dev data also goes to `./data`.
 
-**Accounts.** Signing in is with Google or GitHub only (set up a dev OAuth app per provider, see DEPLOY.md, and run `GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... make dev`). The first sign-in creates the account. Each user's library and events are separate. Signed out, visitors can read the five starter papers in `backend/app/starter.py`, and nothing is recorded. From the terminal: `make user ARGS="list"`, `make user ARGS="admin alice"`, `make user ARGS="rename alice alicia"`. Only admins can see `/admin`. Data from before accounts existed belongs to the admin `owner`: sign in once, which makes a new empty account, then `make user ARGS="move-signins <new> owner"`.
+**Accounts.** Signing in is with Google or GitHub only (see [Sign-in for local use](#sign-in-for-local-use)). The first sign-in creates the account. Each user's library and events are separate. Signed out, visitors can read the five starter papers in `backend/app/starter.py`, and nothing is recorded. From the terminal: `make user ARGS="list"`, `make user ARGS="admin alice"`, `make user ARGS="rename alice alicia"`. Only admins can see `/admin`. Data from before accounts existed belongs to the admin `owner`: sign in once, which makes a new empty account, then `make user ARGS="move-signins <new> owner"`.
+
+## Sign-in for local use
+
+Google and GitHub are the only ways to sign in, so you need your own OAuth app for at least one of them. A provider's button appears once both its client ID and secret are set. The callback URL is `<where you open the app>/api/auth/oauth/<provider>/callback`: `http://localhost:5173` with `make dev`, `http://localhost:8000` with Docker.
+
+**GitHub** (quickest): Settings → Developer settings → OAuth Apps → New OAuth App. Set the homepage to `http://localhost:5173` and the callback to `http://localhost:5173/api/auth/oauth/github/callback`, then generate a client secret.
+
+**Google:** in Google Cloud console, go to APIs & Services → OAuth consent screen. Choose External, with the scopes `openid`, `email` and `profile`, and add yourself as a test user while the app is in "Testing". Then go to Credentials → Create credentials → OAuth client ID → Web application, and add `http://localhost:5173/api/auth/oauth/google/callback` as an authorised redirect URI.
+
+Then run with the credentials set:
+
+```sh
+GITHUB_CLIENT_ID=... GITHUB_CLIENT_SECRET=... make dev
+# or for Docker, put GITHUB_CLIENT_ID=... etc. in a .env file next to docker-compose.yml, then
+docker compose up --build
+```
+
+Your first sign-in creates your account. To see `/admin`, make yourself an admin: `make user ARGS="admin <you>"` (Docker: `docker compose exec reader python -m app.cli user admin <you>`).
 
 ## How it works
 

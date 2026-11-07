@@ -10,7 +10,7 @@ fetch and embed are separate processes and can run at the same time; both
 write to DATA_DIR/catalog.db.
 
 Environment: DATA_DIR (./data), CATALOG_SETS (cs,stat,eess), FLY_APP
-(the Fly app, still named taste-reader), EMBED_BATCH (128, papers per GPU forward pass).
+(the Fly app to push to; required for push unless --app is given), EMBED_BATCH (128, papers per GPU forward pass).
 """
 
 import argparse
@@ -34,8 +34,10 @@ def main() -> None:
     be = sub.add_parser("bench", help="measure embedding throughput")
     be.add_argument("--n", type=int, default=8000)
     pu = sub.add_parser("push", help="upload the catalog to the Fly app")
-    pu.add_argument("--app", default=os.environ.get("FLY_APP", "taste-reader"))
+    pu.add_argument("--app", default=os.environ.get("FLY_APP"))
     args = parser.parse_args()
+    if args.cmd == "push" and not args.app:
+        parser.error("push needs the Fly app name: set FLY_APP or pass --app")
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)

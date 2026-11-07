@@ -105,8 +105,8 @@ def test_parse_feed_not_found(xml):
 
 
 def test_parse_id_strips_tracking_parameters():
-    url = ("https://arxiv.org/abs/1409.0473?fbclid=IwY2xjawVWRuBleHRuA2FlbQIxMQBwZG9mA3NydGMGYXBwX2lkATAAAR"
-           "-Q9uI-sSo0vUgbNr-R-cO--SmhWfaX5Lpwf2AsRH6Ki569afQbsAOYXXrliQ_aem_aKgV7k3J1MqVq5VaZLywyA")
+    url = ("https://arxiv.org/abs/1409.0473?fbclid=IwAR0exampleFakeClickId0000000000000000000000000000"
+           "-not-a-real-id_aem_FAKE000000000000000000")
     assert parse_id(url).arxiv_id == "1409.0473"
     assert parse_id("arxiv.org/pdf/1409.0473v2.pdf?utm_source=x#page=3").version == "v2"
 

@@ -9,3 +9,7 @@ backend/data/
 .DS_Store
 backups/
 .env
+# Private hosting config and notes (not published)
+DEPLOY.md
+fly.toml
+deploy.mk

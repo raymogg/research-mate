@@ -1,4 +1,4 @@
-.PHONY: install dev backend frontend test build run stats events export user deploy prod-stats prod-user prod-backup
+.PHONY: install dev backend frontend test build run stats events export user
 
 install:
 	cd backend && uv sync
@@ -41,18 +41,5 @@ export:
 user:
 	@cd backend && DATA_DIR=../data uv run python -m app.cli user $(ARGS)
 
-# --- Fly.io (see DEPLOY.md) ---
-deploy:
-	fly deploy --ha=false
-
-prod-stats:
-	fly ssh console -C "python -m app.cli stats"
-
-prod-user:
-	fly ssh console --pty -C "python -m app.cli user $(ARGS)"
-
-# Copy the production database to ./backups/<timestamp>.db
-prod-backup:
-	@mkdir -p backups
-	fly ssh console -C "python -c \"import sqlite3; sqlite3.connect('/data/app.db').backup(sqlite3.connect('/data/backup.db'))\""
-	fly ssh sftp get /data/backup.db backups/$$(date +%Y%m%d-%H%M%S).db
+# Private hosting targets (gitignored), if present.
+-include deploy.mk

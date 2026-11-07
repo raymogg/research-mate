@@ -48,9 +48,11 @@ On a 48 GB card, try `EMBED_BATCH=512 make bench` and keep whatever is fastest.
 ```sh
 curl -L https://fly.io/install.sh | sh
 fly auth login                       # or, for unattended pushes, use a deploy token:
-fly tokens create deploy -a taste-reader          # (run anywhere you're signed in)
-echo "FLY_API_TOKEN=<token>" | sudo tee /etc/taste-collect.env && sudo chmod 600 /etc/taste-collect.env
+fly tokens create deploy -a <app>   # (run anywhere you're signed in)
+printf "FLY_APP=<app>\nFLY_API_TOKEN=<token>\n" | sudo tee /etc/taste-collect.env && sudo chmod 600 /etc/taste-collect.env
 ```
+
+For a push by hand, set `FLY_APP=<app>` in your shell or pass `--app`.
 
 **Optional head start.** The Mac already has about 150k papers (July to
 November) in `data/catalog.db` at the project root, with no embeddings. Copy it
@@ -124,8 +126,8 @@ full-size upload takes. Add a card to the Fly account before the first big push.
   - Clear the old vectors:
     `sqlite3 data/catalog.db "DELETE FROM embeddings; UPDATE papers SET embed_state = NULL"`
   - Run `make embed`.
-- **Size:** about 1.5 KB of metadata plus 1.5 KB of vector per paper. The Fly
-  volume is 10 GB, and a push briefly needs the upload plus the unpacked copy
+- **Size:** about 1.5 KB of metadata plus 1.5 KB of vector per paper. The server's
+  volume needs room for it, and a push briefly needs the upload plus the unpacked copy
   on top of the old catalog.
 - **Testing on a Mac:** everything runs there too; embed uses Apple's GPU at
   ~40–90 papers/s. `DATA_DIR=/tmp/x make fetch` keeps a test catalog separate.

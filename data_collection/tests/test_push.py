@@ -19,7 +19,7 @@ class FakeFly:
         self.remote, self.free_gb, self.commands = remote, free_gb, []
 
     def __call__(self, cmd, check=True, text=True, capture_output=False):
-        assert cmd[0] == "fly" and cmd[-2:] == ["-a", "taste-reader"]
+        assert cmd[0] == "fly" and cmd[-2:] == ["-a", "my-app"]
         args = cmd[1:-2]
         self.commands.append(args)
         out = ""
@@ -50,7 +50,7 @@ def test_push_installs_a_checked_copy(con, tmp_path, capsys):
     (remote / "catalog.db").write_bytes(b"old")
     (remote / "catalog.db-wal").write_bytes(b"old wal")
     fly = FakeFly(remote)
-    push.push(tmp_path / "catalog.db", "taste-reader", run=fly)
+    push.push(tmp_path / "catalog.db", "my-app", run=fly)
 
     assert ["machine", "start", "m1"] in fly.commands
     assert "installed" in capsys.readouterr().out
@@ -66,7 +66,7 @@ def test_push_refuses_without_room(con, tmp_path):
     remote.mkdir()
     fly = FakeFly(remote, free_gb=0)
     with pytest.raises(SystemExit, match="not enough space"):
-        push.push(tmp_path / "catalog.db", "taste-reader", run=fly)
+        push.push(tmp_path / "catalog.db", "my-app", run=fly)
     assert not any(c[:3] == ["ssh", "sftp", "put"] for c in fly.commands)
 
 
