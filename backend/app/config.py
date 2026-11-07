@@ -23,15 +23,14 @@ class Settings:
     )
     data_dir: Path = field(default_factory=lambda: Path(_env("DATA_DIR", "./data")))
     static_dir: Path = field(default_factory=lambda: Path(_env("STATIC_DIR", "./static")))
-    # Sign-up needs this code; empty disables sign-up (accounts via `app.cli user add` only).
-    invite_code: str = field(default_factory=lambda: _env("INVITE_CODE", ""))
     # Send the login cookie over HTTPS only. Set in production.
     cookie_secure: bool = field(default_factory=lambda: _env("COOKIE_SECURE", "0") == "1")
     login_days: int = field(default_factory=lambda: int(_env("LOGIN_DAYS", "30")))
     # Where browsers reach the app, e.g. https://researchmate.org. OAuth
     # redirect URIs are built from it; empty uses the request's own URL (dev).
     public_url: str = field(default_factory=lambda: _env("PUBLIC_URL", ""))
-    # OAuth apps for "Sign in with Google / GitHub". A provider shows up once both are set.
+    # OAuth apps for "Continue with Google / GitHub", the only ways to sign in.
+    # A provider shows up once both are set.
     google_client_id: str = field(default_factory=lambda: _env("GOOGLE_CLIENT_ID", ""))
     google_client_secret: str = field(default_factory=lambda: _env("GOOGLE_CLIENT_SECRET", ""))
     github_client_id: str = field(default_factory=lambda: _env("GITHUB_CLIENT_ID", ""))
@@ -79,6 +78,5 @@ class Settings:
             "page_viewed_min_s": self.page_viewed_min_s,
             "auto_read_threshold": self.auto_read_threshold,
             "flush_interval_s": self.flush_interval_s,
-            "signup_open": bool(self.invite_code),
             "providers": [p for p in ("google", "github") if self.oauth_client(p)],
         }

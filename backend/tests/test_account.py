@@ -35,7 +35,7 @@ def token_for(c, name="script") -> str:
 def test_profile_summarises_my_data(client):
     read_a_paper(client)
     me = client.get("/api/me").json()
-    assert me["username"] == "alice" and me["has_password"] is True and me["identities"] == []
+    assert me["username"] == "alice" and me["identities"] == []
     assert me["data"]["papers"] == 1 and me["data"]["sessions"] == 1 and me["data"]["active_ms"] == 50_000
     assert me["data"]["events"] >= 3 and me["backup_retention_days"] == 14
     events = client.get("/api/me/events?limit=2").json()

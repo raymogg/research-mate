@@ -1,9 +1,8 @@
-import { type FormEvent, useState } from "react";
-import { api, PROVIDER_NAMES, type Provider, type User } from "../api";
+import { type ReactNode, useState } from "react";
+import { api, PROVIDER_NAMES, type Provider } from "../api";
 
 /** What `?auth_error=` from the OAuth callback means. */
 export const AUTH_ERRORS: Record<string, string> = {
-  no_account: "No account uses that sign-in yet. Have an invite code? Create an account with it.",
   expired: "That sign-in took too long or was started elsewhere. Try again.",
   cancelled: "Sign-in was cancelled.",
   provider: "We couldn't confirm the sign-in with the provider. Try again.",
@@ -21,40 +20,35 @@ export function takeAuthError(): string | null {
   return AUTH_ERRORS[code] ?? "Sign-in didn't work. Try again.";
 }
 
-export function Login({
-  signupOpen,
-  providers,
-  onSignedIn,
-}: {
-  signupOpen: boolean;
-  providers: Provider[];
-  onSignedIn: (u: User) => void;
-}) {
-  const [mode, setMode] = useState<"login" | "signup">("login");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [code, setCode] = useState("");
+// The starter paper a visitor was reading when they chose to sign in. Added to
+// their library, and reopened, once they're back from the provider.
+const PENDING_KEY = "researchmate:after-sign-in";
+
+export function takePendingPaper(): string | null {
+  try {
+    const key = sessionStorage.getItem(PENDING_KEY);
+    sessionStorage.removeItem(PENDING_KEY);
+    return key;
+  } catch {
+    return null;
+  }
+}
+
+/** "Continue with Google / GitHub". A first sign-in creates the account. */
+export function SignInButtons({ providers, paperKey }: { providers: Provider[]; paperKey?: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(takeAuthError);
-  const signup = mode === "signup";
 
-  async function submit(e: FormEvent) {
-    e.preventDefault();
+  async function go(provider: Provider) {
     setBusy(true);
     setError(null);
     try {
-      onSignedIn(signup ? await api.auth.signup(username, password, code) : await api.auth.login(username, password));
-    } catch (err) {
-      setError((err as Error).message);
-      setBusy(false);
-    }
-  }
-
-  async function withProvider(provider: Provider) {
-    setBusy(true);
-    setError(null);
-    try {
-      const { url } = await api.auth.oauthStart(provider, mode, code);
+      const { url } = await api.auth.oauthStart(provider, "login");
+      try {
+        if (paperKey) sessionStorage.setItem(PENDING_KEY, paperKey);
+      } catch {
+        // storage blocked: they'll land on their library instead
+      }
       window.location.assign(url);
     } catch (err) {
       setError((err as Error).message);
@@ -63,79 +57,44 @@ export function Login({
   }
 
   return (
-    <div className="login">
-      <form className="login-card" onSubmit={submit}>
-        <h1>ResearchMate</h1>
-        <p className="muted small">{signup ? "Create an account with your invite code." : "Sign in to continue."}</p>
-        {signup && (
-          <label>
-            Invite code
-            <input autoFocus autoComplete="off" value={code} onChange={(e) => setCode(e.target.value)} />
-          </label>
-        )}
-        {providers.length > 0 && (
-          <>
-            <div className="provider-buttons">
-              {providers.map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  className="provider-button"
-                  disabled={busy || (signup && !code)}
-                  onClick={() => void withProvider(p)}
-                >
-                  Continue with {PROVIDER_NAMES[p]}
-                </button>
-              ))}
-            </div>
-            <p className="divider small muted">
-              <span>or {signup ? "choose a username and password" : "use your username"}</span>
-            </p>
-          </>
-        )}
-        <label>
-          Username
-          <input
-            autoFocus={!signup && providers.length === 0}
-            autoComplete="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-          />
-        </label>
-        <label>
-          Password
-          <input
-            type="password"
-            autoComplete={signup ? "new-password" : "current-password"}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </label>
-        {error && (
-          <p className="error" role="alert">
-            {error}
-          </p>
-        )}
-        <button className="primary" type="submit" disabled={busy || !username || !password || (signup && !code)}>
-          {busy ? "…" : signup ? "Create account" : "Sign in"}
-        </button>
-        {signupOpen && (
-          <button
-            type="button"
-            className="link"
-            onClick={() => {
-              setMode(signup ? "login" : "signup");
-              setError(null);
-            }}
-          >
-            {signup ? "Have an account? Sign in" : "Have an invite code? Create an account"}
-          </button>
-        )}
-        <p className="muted small">
-          {signup ? "By creating an account you agree to how we handle your data, set out in our " : "How we handle your data: "}
-          <a href="/privacy">privacy policy</a>.
+    <div className="sign-in">
+      {providers.length === 0 ? (
+        <p className="muted small">Sign-in isn't set up on this server yet.</p>
+      ) : (
+        <div className="provider-buttons">
+          {providers.map((p) => (
+            <button key={p} type="button" className="provider-button" disabled={busy} onClick={() => void go(p)}>
+              Continue with {PROVIDER_NAMES[p]}
+            </button>
+          ))}
+        </div>
+      )}
+      {error && (
+        <p className="error" role="alert">
+          {error}
         </p>
-      </form>
+      )}
+      <p className="muted small">
+        New here? Your first sign-in creates your account. By continuing you agree to how we handle your data, set
+        out in our <a href="/privacy">privacy policy</a>.
+      </p>
+    </div>
+  );
+}
+
+/** A page that needs an account, seen signed out. */
+export function Login({ providers, children }: { providers: Provider[]; children?: ReactNode }) {
+  return (
+    <div className="login">
+      <div className="login-card">
+        <div className="brand">ResearchMate</div>
+        <h1>Sign in</h1>
+        <p className="muted small">{children ?? "Sign in to see your library."}</p>
+        <SignInButtons providers={providers} />
+        <a className="small" href="/">
+          ← Browse the starter papers
+        </a>
+      </div>
     </div>
   );
 }

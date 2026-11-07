@@ -1,8 +1,5 @@
 .PHONY: install dev backend frontend test build run stats events export user deploy prod-stats prod-user prod-backup
 
-# Local sign-up code; production sets its own with `fly secrets set INVITE_CODE=...`.
-INVITE_CODE ?= dev
-
 install:
 	cd backend && uv sync
 	cd frontend && npm install
@@ -15,7 +12,7 @@ dev:
 	wait
 
 backend:
-	cd backend && DATA_DIR=../data INVITE_CODE=$(INVITE_CODE) PUBLIC_URL=http://localhost:5173 uv run uvicorn app.main:create_app --factory --reload --port 8000
+	cd backend && DATA_DIR=../data PUBLIC_URL=http://localhost:5173 uv run uvicorn app.main:create_app --factory --reload --port 8000
 
 frontend:
 	cd frontend && npm run dev
@@ -40,7 +37,7 @@ events:
 export:
 	@cd backend && DATA_DIR=../data uv run python -m app.cli export
 
-# Accounts, e.g. make user ARGS="add alice", ARGS="passwd owner", ARGS="list"
+# Accounts, e.g. make user ARGS="list", ARGS="move-signins <new> owner"
 user:
 	@cd backend && DATA_DIR=../data uv run python -m app.cli user $(ARGS)
 

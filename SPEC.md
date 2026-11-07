@@ -39,7 +39,7 @@ This is the observation layer for the wider research-taste project. Later, these
 | 3 | Tag structure | Plain free text, normalised (trimmed, lowercased). No kinds or prefixes. |
 | 4 | Hosting | One Docker image, run locally or on one Fly.io machine with a volume (see `DEPLOY.md`). SQLite stays. |
 | 5 | Explicit feedback | 1–5 rating per paper, part of the reading flow (see §4.4). |
-| 6 | Users and auth | Username/password accounts in our own DB (stdlib scrypt hashes, HttpOnly session cookie). Sign-up needs `INVITE_CODE`; admins can also create accounts with the CLI. Each user has a separate library and event stream. Only admins see `/admin`. No external auth provider for now. |
+| 6 | Users and auth | Sign-in with Google or GitHub only (OAuth with PKCE, HttpOnly session cookie); no passwords. The first sign-in creates the account; sign-up is open. Signed-out visitors can read the starter papers, untracked. Each user has a separate library and event stream. Only admins see `/admin`. |
 
 ## 4. User flows
 
@@ -234,8 +234,9 @@ Client events carry the thresholds the browser loaded; server events carry the s
 | `POST /api/events` | Body `{ events: [...] }`. Client event batch |
 | `GET /api/feedback/pending` | Papers waiting for post-visit answers, most recently opened first |
 | `POST /api/papers/{id}/feedback` | Body `{ interest?, value?, novelty?, level?, reasons?, skipped?, context, shown_ms }`. Answer or skip (409 if already done) |
-| `POST /api/auth/signup` | Body `{ username, password, invite_code }`. Creates an account and signs in |
-| `POST /api/auth/login` / `logout`, `GET /api/auth/me` | Session cookie `taste_login` |
+| `POST /api/auth/oauth/{provider}/start` | Body `{ mode: "login" \| "link" }`. Returns the provider URL; a first sign-in creates the account |
+| `POST /api/auth/logout`, `GET /api/auth/me` | Session cookie `taste_login` |
+| `GET /api/starter`, `GET /api/starter/{id}/pdf` / `html` | Starter papers, open to visitors. Records nothing |
 | `GET /api/admin/...` | Admins only: `users`, `overview`, `events`, `sessions`, `papers`; `?user_id=` scopes to one user |
 
 Every library route requires a signed-in user and only touches that user's rows; another user's paper is a 404.
@@ -315,7 +316,7 @@ research-taste-project/
 | `FLUSH_INTERVAL_S` | 15 | Client event flush interval |
 | `FEEDBACK_URL` | `http://127.0.0.1:8000/feedback/events` | Where events are forwarded |
 | `DATA_DIR` | `./data` (`/data` in Docker) | SQLite db, PDF cache, `feedback.log` |
-| `INVITE_CODE` | empty (`dev` via `make dev`) | Code required to sign up; empty closes sign-up |
+| `GOOGLE_CLIENT_ID` / `_SECRET`, `GITHUB_CLIENT_ID` / `_SECRET` | empty | OAuth apps for sign-in; a provider shows once both are set |
 | `COOKIE_SECURE` | `0` | `1` sends the login cookie over HTTPS only (production) |
 | `LOGIN_DAYS` | 30 | How long a sign-in lasts |
 

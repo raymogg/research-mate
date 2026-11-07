@@ -1,7 +1,6 @@
-import secrets
+"""Sign-in state. Signing in itself happens through Google or GitHub (oauth.py)."""
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, Request, Response
 from sqlmodel import Session
 
 from .. import auth
@@ -9,15 +8,6 @@ from ..db import get_db
 from ..models import User
 
 router = APIRouter(prefix="/api/auth")
-
-
-class Credentials(BaseModel):
-    username: str = Field(max_length=64)
-    password: str = Field(max_length=256)
-
-
-class SignUp(Credentials):
-    invite_code: str = Field(max_length=256)
 
 
 def user_out(user: User) -> dict:
@@ -36,28 +26,6 @@ def _sign_in(request: Request, response: Response, db: Session, user: User) -> d
         samesite="lax",
     )
     return user_out(user)
-
-
-@router.post("/signup", status_code=201)
-def sign_up(body: SignUp, request: Request, response: Response, db: Session = Depends(get_db)):
-    code = request.app.state.settings.invite_code
-    if not code:
-        raise HTTPException(403, "Sign-up is closed")
-    if not secrets.compare_digest(body.invite_code.strip().encode(), code.encode()):
-        raise HTTPException(403, "That invite code isn't right")
-    try:
-        user = auth.create_user(db, body.username, body.password)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-    return _sign_in(request, response, db, user)
-
-
-@router.post("/login")
-def log_in(body: Credentials, request: Request, response: Response, db: Session = Depends(get_db)):
-    user = auth.authenticate(db, body.username, body.password)
-    if user is None:
-        raise HTTPException(401, "Wrong username or password")
-    return _sign_in(request, response, db, user)
 
 
 @router.post("/logout", status_code=204)

@@ -8,6 +8,7 @@ import { RatingStars } from "../components/RatingStars";
 import { ThemeToggle } from "../components/SiteFooter";
 import { StatusSelect } from "../components/StatusSelect";
 import { TagInput } from "../components/TagInput";
+import { Login, SignInButtons } from "./Login";
 import { authorLine, duration } from "../format";
 import { migrateKey } from "../storage";
 import { useTheme } from "../theme";
@@ -36,7 +37,19 @@ const FALLBACK_NOTICE: Record<HtmlFailure, string> = {
 
 export function Reader() {
   const { key = "" } = useParams();
-  const { config, buffer } = useApp();
+  const { user, starter, config } = useApp();
+  if (user) return <ReaderPage paperKey={key} visitor={false} />;
+  // Visitors read starter papers only, untracked
+  if (!starter) return <div className="page-message">Loading…</div>;
+  if (!starter.papers.some((p) => p.key === key))
+    return <Login providers={config.providers}>Sign in to read any arXiv paper.</Login>;
+  return <ReaderPage paperKey={key} visitor />;
+}
+
+function ReaderPage({ paperKey: key, visitor }: { paperKey: string; visitor: boolean }) {
+  const { config, buffer, starter } = useApp();
+  const starterPaper = visitor ? starter?.papers.find((p) => p.key === key) : undefined;
+  const [askSignIn, setAskSignIn] = useState(visitor);
   const [paper, setPaper] = useState<Paper | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [numPages, setNumPages] = useState<number | null>(null);
@@ -88,6 +101,7 @@ export function Reader() {
   // One reading session per visit. Coming back to a tab hidden for longer than the
   // return-visit gap closes the old session and opens a new one.
   useEffect(() => {
+    if (visitor) return; // nothing is recorded for visitors
     let cancelled = false;
     let hiddenAt: number | null = null;
     const gapMs = config.return_visit_gap_min * 60_000;
@@ -143,7 +157,7 @@ export function Reader() {
       window.removeEventListener("pageshow", onPageShow);
       end();
     };
-  }, [key, buffer, config, merge, units]);
+  }, [key, buffer, config, merge, units, visitor]);
 
   // Server-side state changes (e.g. auto-Read) arrive with each event flush.
   useEffect(
@@ -156,8 +170,8 @@ export function Reader() {
   );
 
   useEffect(() => {
-    api.listTags().then((ts) => setAllTags(ts.map((t) => t.name))).catch(() => {});
-  }, []);
+    if (!visitor) api.listTags().then((ts) => setAllTags(ts.map((t) => t.name))).catch(() => {});
+  }, [visitor]);
 
   // Tell the backend the page count once the PDF has loaded; it drives completion.
   useEffect(() => {
@@ -225,24 +239,34 @@ export function Reader() {
       <header className="reader-bar">
         <div className="reader-row">
           <Link to="/" className="back">
-            ← Library
+            {visitor ? "← Papers" : "← Library"}
           </Link>
-          <div className="reader-title" title={paper?.title}>
-            <strong>{paper?.title ?? "Loading…"}</strong>
-            {paper && (
+          <div className="reader-title" title={paper?.title ?? starterPaper?.title}>
+            <strong>{paper?.title ?? starterPaper?.title ?? "Loading…"}</strong>
+            {(paper ?? starterPaper) && (
               <span className="muted small">
                 {" "}
-                {authorLine(paper.authors)} ·{" "}
-                <a href={`https://arxiv.org/abs/${paper.arxiv_id}`} target="_blank" rel="noreferrer">
-                  arXiv:{paper.arxiv_id}
+                {paper ? authorLine(paper.authors) : starterPaper?.authors} ·{" "}
+                <a
+                  href={`https://arxiv.org/abs/${paper?.arxiv_id ?? starterPaper?.arxiv_id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  arXiv:{paper?.arxiv_id ?? starterPaper?.arxiv_id}
                 </a>
               </span>
             )}
           </div>
           <div className="reader-tools">
-            <span className="muted small" title="Active reading time this session">
-              {duration(sessionMs)}
-            </span>
+            {visitor ? (
+              <button className="link small" onClick={() => setAskSignIn(true)}>
+                Sign in to save
+              </button>
+            ) : (
+              <span className="muted small" title="Active reading time this session">
+                {duration(sessionMs)}
+              </span>
+            )}
             <span className="segmented view-toggle" role="radiogroup" aria-label="Show the paper as">
               {(["pdf", "html"] as const).map((v) => (
                 <button
@@ -305,6 +329,21 @@ export function Reader() {
             </button>
           </div>
         )}
+        {askSignIn && (
+          <div className="visitor-prompt" role="dialog" aria-labelledby="visitor-prompt-title">
+            <div>
+              <strong id="visitor-prompt-title">Save this paper and your reading</strong>
+              <p className="muted small">
+                You're reading as a visitor, so nothing is saved. Sign in to keep this paper in a library, pick up
+                where you left off, see your reading stats, and get recommendations tailored to you.
+              </p>
+            </div>
+            <SignInButtons providers={config.providers} paperKey={key} />
+            <button className="link small" onClick={() => setAskSignIn(false)}>
+              Keep reading without saving
+            </button>
+          </div>
+        )}
         {notice && (
           <p className="notice small" role="status">
             {notice}
@@ -318,7 +357,7 @@ export function Reader() {
       </header>
       {view === "html" ? (
         <HtmlView
-          url={api.htmlUrl(key, theme)}
+          url={visitor ? api.starter.htmlUrl(key, theme) : api.htmlUrl(key, theme)}
           zoom={zoom}
           onSectionInView={onSectionInView}
           onError={onHtmlError}
@@ -328,7 +367,7 @@ export function Reader() {
         />
       ) : (
         <PdfView
-          url={api.pdfUrl(key)}
+          url={visitor ? api.starter.pdfUrl(key) : api.pdfUrl(key)}
           zoom={zoom}
           onLoaded={onLoaded}
           onPageInView={onPageInView}

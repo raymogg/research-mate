@@ -1,7 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type MyEvent, PROVIDER_NAMES, type Profile as ProfileData, type Provider } from "../api";
-import { useApp } from "../App";
+import { useApp, useUser } from "../App";
 import { ago, duration, when } from "../format";
 import { takeAuthError } from "./Login";
 
@@ -49,7 +49,8 @@ function detail(e: MyEvent): string {
 }
 
 export function Profile() {
-  const { config, user, signOut } = useApp();
+  const { config, signOut } = useApp();
+  const user = useUser();
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [events, setEvents] = useState<MyEvent[]>([]);
   const [more, setMore] = useState(false);
@@ -185,7 +186,7 @@ function SignIns({
   onError: (m: string | null) => void;
 }) {
   const linked = new Set(profile.identities.map((i) => i.provider));
-  const canUnlink = profile.has_password || profile.identities.length > 1;
+  const canUnlink = profile.identities.length > 1;
 
   async function link(p: Provider) {
     onError(null);
@@ -211,11 +212,6 @@ function SignIns({
       <h2>Ways to sign in</h2>
       <table className="grid">
         <tbody>
-          <tr>
-            <td>Username and password</td>
-            <td className="muted small">{profile.has_password ? "Set" : "Not set"}</td>
-            <td />
-          </tr>
           {profile.identities.map((i) => (
             <tr key={i.provider}>
               <td>{PROVIDER_NAMES[i.provider] ?? i.provider}</td>

@@ -39,7 +39,6 @@ def profile(request: Request, db: Session = Depends(get_db), user: User = Depend
     return {
         **user_out(user),
         "created_at": iso(user.created_at),
-        "has_password": auth.has_password(user),
         "identities": [
             {"provider": i.provider, "email": i.email, "created_at": iso(i.created_at), "last_used_at": iso(i.last_used_at)}
             for i in _identities(db, user)
@@ -131,7 +130,7 @@ def unlink(provider: str, db: Session = Depends(get_db), user: User = Depends(au
     identity = next((i for i in identities if i.provider == provider), None)
     if identity is None:
         raise HTTPException(404, f"No {provider} sign-in on this account")
-    if len(identities) == 1 and not auth.has_password(user):
+    if len(identities) == 1:
         raise HTTPException(400, "This is your only way to sign in; link another one first")
     db.delete(identity)
     db.commit()

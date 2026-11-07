@@ -3,25 +3,28 @@
     python -m app.cli stats [-u NAME]      # what's been captured so far
     python -m app.cli events -n 20 -t page_dwell [-u NAME]
     python -m app.cli export [--out DIR]   # CSV/JSONL for notebooks
-    python -m app.cli user add NAME [--admin]   # prompts for a password
-    python -m app.cli user list | passwd NAME | rename NAME NEW | admin NAME [--revoke]
+    python -m app.cli user list | rename NAME NEW | admin NAME [--revoke]
+    python -m app.cli user move-signins NEW OLD   # NEW's Google/GitHub sign-ins now open OLD
+
+Accounts are created by signing in with Google or GitHub. An account from
+before then (it had a password) is reached by signing in once, which makes a
+new empty account, then moving that sign-in onto the old one.
 
 Reads DATA_DIR like the server, so it works while the server is running.
 """
 
 import argparse
 import csv
-import getpass
 import json
 from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlmodel import Session, select
 
-from . import admin, auth
+from . import account, admin, auth
 from .config import Settings
 from .db import make_engine
-from .models import Event, Login, Paper, PaperTag, User, iso
+from .models import Event, Identity, Paper, PaperTag, User, iso
 
 
 def fmt_ms(ms: int) -> str:
@@ -138,14 +141,25 @@ def export(db: Session, settings: Settings, out: Path) -> None:
         print(f"  {name}")
 
 
-def ask_password() -> str:
-    password = getpass.getpass("Password: ")
-    if getpass.getpass("Again: ") != password:
-        raise SystemExit("Passwords don't match")
-    return password
+def move_signins(db: Session, settings: Settings, src: User, dst: User) -> None:
+    """Give `dst` every sign-in of `src`, then delete `src`, which must have no papers."""
+    if src.id == dst.id:
+        raise ValueError("That's the same account")
+    if db.exec(select(Paper).where(Paper.user_id == src.id)).first():
+        raise ValueError(f"{src.username} has papers; this only moves sign-ins off a new, empty account")
+    identities = db.exec(select(Identity).where(Identity.user_id == src.id)).all()
+    if not identities:
+        raise ValueError(f"{src.username} has no Google or GitHub sign-in to move")
+    for identity in identities:
+        identity.user_id = dst.id
+        db.add(identity)
+    db.commit()
+    account.delete_user(db, settings, src)
+    names = ", ".join(i.provider for i in identities)
+    print(f"{dst.username} now signs in with {names}; {src.username} is deleted")
 
 
-def user_cmd(db: Session, args) -> None:
+def user_cmd(db: Session, settings: Settings, args) -> None:
     if args.action == "list":
         for u in admin.users(db):
             role = "admin" if u["is_admin"] else ""
@@ -155,19 +169,8 @@ def user_cmd(db: Session, args) -> None:
     if not args.name:
         raise SystemExit(f"user {args.action} needs a username")
     try:
-        if args.action == "add":
-            user = auth.create_user(db, args.name, ask_password(), is_admin=args.admin)
-            print(f"Created {user.username} (id {user.id}{', admin' if user.is_admin else ''})")
-        elif args.action == "passwd":
-            user = find_user(db, args.name)
-            password = ask_password()
-            auth.check_new_password(password)
-            user.password_hash = auth.hash_password(password)
-            for login in db.exec(select(Login).where(Login.user_id == user.id)):
-                db.delete(login)  # sign out everywhere
-            db.add(user)
-            db.commit()
-            print(f"Password changed for {user.username}; their browsers are signed out")
+        if args.action == "move-signins":
+            move_signins(db, settings, find_user(db, args.name), find_user(db, args.new or ""))
         elif args.action == "rename":
             user = find_user(db, args.name)
             new = auth.normalise_username(args.new or "")
@@ -199,10 +202,9 @@ def main() -> None:
     ex = sub.add_parser("export", help="write CSV/JSONL files")
     ex.add_argument("--out", type=Path, help="default: DATA_DIR/exports/<timestamp>")
     us = sub.add_parser("user", help="manage accounts")
-    us.add_argument("action", choices=["add", "list", "passwd", "rename", "admin"])
+    us.add_argument("action", choices=["list", "rename", "admin", "move-signins"])
     us.add_argument("name", nargs="?")
-    us.add_argument("new", nargs="?", help="rename: the new username")
-    us.add_argument("--admin", action="store_true", help="add: make an admin")
+    us.add_argument("new", nargs="?", help="rename: the new username; move-signins: the old account")
     us.add_argument("--revoke", action="store_true", help="admin: remove admin rights")
     args = parser.parse_args()
 
@@ -217,7 +219,7 @@ def main() -> None:
         elif args.cmd == "events":
             events(db, args.n, args.type, uid)
         elif args.cmd == "user":
-            user_cmd(db, args)
+            user_cmd(db, settings, args)
         else:
             stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
             export(db, settings, args.out or settings.data_dir / "exports" / stamp)
