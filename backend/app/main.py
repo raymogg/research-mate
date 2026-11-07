@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from .config import Settings
 from .db import make_engine
 from .events import Sender, http_sender
-from .routes import admin, auth, events, feedback_stub, me, oauth, paper_feedback, papers, starter, tags
+from .routes import admin, auth, events, feedback_stub, health, me, oauth, paper_feedback, papers, starter, tags
 from .routes.common import forward_now
 
 logging.basicConfig(level=logging.INFO)
@@ -52,6 +52,7 @@ def create_app(settings: Settings | None = None, feedback_sender: Sender | None 
                 return RedirectResponse(str(target), status_code=308)
             return await call_next(request)
 
+    app.include_router(health.router)
     app.include_router(auth.router)
     app.include_router(oauth.router)
     app.include_router(me.router)
