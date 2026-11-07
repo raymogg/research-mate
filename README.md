@@ -1,4 +1,4 @@
-# Taste Reader
+# ResearchMate
 
 An arXiv reader that records how each user reads: time per page, total read time, return visits, completion, ratings, status and tags. Events are stored in SQLite and forwarded to a stub feedback API (`feedback.log`), which the research-taste learning backend will replace later.
 

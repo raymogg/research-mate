@@ -49,7 +49,7 @@ def test_export_holds_every_table_of_mine_and_no_secrets(client, make_client):
     token_for(client)
     resp = client.get("/api/me/export")
     assert resp.status_code == 200
-    assert resp.headers["content-disposition"].startswith('attachment; filename="taste-reader-alice-')
+    assert resp.headers["content-disposition"].startswith('attachment; filename="researchmate-alice-')
     data = resp.json()
     assert data["user"]["username"] == "alice"
     for table in user_tables():

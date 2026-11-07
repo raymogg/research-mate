@@ -1,5 +1,5 @@
 [Unit]
-Description=taste-reader catalog: arXiv metadata harvest
+Description=ResearchMate catalog: arXiv metadata harvest
 After=network-online.target
 Wants=network-online.target
 

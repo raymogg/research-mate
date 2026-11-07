@@ -1,5 +1,5 @@
 [Unit]
-Description=taste-reader catalog: SPECTER2 embeddings
+Description=ResearchMate catalog: SPECTER2 embeddings
 After=network-online.target
 Wants=network-online.target
 

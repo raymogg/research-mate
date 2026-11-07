@@ -262,7 +262,7 @@ export class ApiError extends Error {
 }
 
 /** Fired when any request comes back 401, so the app can show the sign-in screen. */
-export const SIGNED_OUT = "taste-reader:signed-out";
+export const SIGNED_OUT = "researchmate:signed-out";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {

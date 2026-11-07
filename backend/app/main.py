@@ -33,7 +33,7 @@ def create_app(settings: Settings | None = None, feedback_sender: Sender | None 
         task.cancel()
 
 
-    app = FastAPI(title="Taste Reader", lifespan=lifespan)
+    app = FastAPI(title="ResearchMate", lifespan=lifespan)
     app.state.settings = settings
     app.state.engine = make_engine(settings.db_url)
     app.state.feedback_sender = feedback_sender or http_sender(settings)

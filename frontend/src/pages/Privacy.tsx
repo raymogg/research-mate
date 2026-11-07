@@ -6,13 +6,11 @@
  * kept changes, change this page and UPDATED in the same commit.
  */
 
-const UPDATED = "6 November 2026";
-const CONTACT_EMAIL = "privacy@researchmate.org";
+const UPDATED = "7 November 2026";
 const BACKUP_DAYS = 14; // fly.toml snapshot_retention
 const LOGIN_DAYS = 30; // Settings.login_days
 
 export function Privacy() {
-  const mail = <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>;
   return (
     <div className="admin privacy">
       <header className="admin-header">
@@ -43,8 +41,7 @@ export function Privacy() {
       <section>
         <h2>Who we are</h2>
         <p>
-          ResearchMate (“we”, “us”) is a research project and paper reader at researchmate.org. It's invite only. If
-          you have any question about your data, or want us to do something with it, email {mail}.
+          ResearchMate (“we”, “us”) is a research project and paper reader at researchmate.org. It's invite only.
         </p>
       </section>
 
@@ -53,10 +50,7 @@ export function Privacy() {
         <h3>Your account</h3>
         <ul>
           <li>Your username.</li>
-          <li>
-            Your password, if you set one. We only store a scrambled version (a one-way hash), so we can't see or
-            recover it.
-          </li>
+          <li>Your password, if you set one.</li>
           <li>
             If you sign in with Google or GitHub: the ID that service gives your account, and your email address.
             We never see your Google or GitHub password, and we don't ask for access to anything else in those
@@ -121,62 +115,19 @@ export function Privacy() {
       </section>
 
       <section>
-        <h2>Who else is involved</h2>
-        <p>
-          <strong>We do not sell, rent, trade or give your data to any third party.</strong> Running a website does
-          involve a few other companies. Each one only does the job described here, and none of them gets your
-          reading data to use for its own purposes:
-        </p>
-        <ul>
-          <li>
-            <strong>Fly.io</strong> hosts our servers and database in Sydney, Australia. It stores the data for us,
-            on an encrypted disk.
-          </li>
-          <li>
-            <strong>Google and GitHub</strong>, only if you choose to sign in with them. They know that you signed in
-            to ResearchMate. They don't receive your reading data.
-          </li>
-          <li>
-            <strong>arXiv</strong>, where the papers come from. Our server fetches papers from arXiv, so arXiv
-            doesn't see who asked for them. When you read the HTML version of a paper, though, your browser loads
-            its images and styling directly from arxiv.org. arXiv then sees your IP address, as any website you visit
-            would.
-          </li>
-        </ul>
-        <p>
-          We would only give your data to anyone else if the law requires it. In that case we'll tell you, unless
-          the law forbids us to.
-        </p>
-      </section>
-
-      <section>
         <h2>Your choices and rights</h2>
         <ul>
           <li>
             <strong>See and download your data:</strong> your <a href="/profile">profile page</a> shows everything
-            we've recorded about you. “Download my data” gives you all of it in one file (JSON).
-          </li>
-          <li>
-            <strong>Export it with a script:</strong> create an API token on your profile page, then fetch{" "}
-            <code>/api/me/export</code> with it. A token can only ever fetch its owner's data, and you can revoke it at
-            any time.
+            we've recorded about you. “Download my data” gives you all of it in one file.
           </li>
           <li>
             <strong>Delete your data:</strong> “Delete account” on your profile page removes your account and
-            everything recorded about you from our live database straight away. The copies in our daily backups
-            are deleted automatically within {BACKUP_DAYS} days. We don't restore deleted accounts from backups.
+            everything recorded about you straight away. Backup copies are deleted automatically within{" "}
+            {BACKUP_DAYS} days. We don't restore deleted accounts from backups.
           </li>
           <li>
-            <strong>Correct your data:</strong> you can change your library, tags and ratings in the app. For anything
-            else, email {mail}.
-          </li>
-          <li>
-            <strong>Ask or complain:</strong> email {mail} and we'll reply within 30 days. If you're in Australia and
-            unhappy with our answer, you can complain to the Office of the Australian Information Commissioner at{" "}
-            <a href="https://www.oaic.gov.au" target="_blank" rel="noopener noreferrer">
-              oaic.gov.au
-            </a>
-            .
+            <strong>Correct your data:</strong> you can change your library, tags and ratings in the app.
           </li>
         </ul>
       </section>
@@ -191,23 +142,14 @@ export function Privacy() {
       </section>
 
       <section>
-        <h2>How we protect it</h2>
-        <p>
-          The site only works over HTTPS. Passwords and API tokens are stored only as one-way hashes. The database
-          is on an encrypted disk. Only the people who run ResearchMate can see other people's data. No system is
-          perfectly secure. If a breach is likely to harm you, we'll tell you and the authorities as the law requires.
-        </p>
-      </section>
-
-      <section>
         <h2>Cookies and browser storage</h2>
         <p>We use no tracking or third-party cookies. We only store these:</p>
         <ul>
           <li>A cookie that keeps you signed in.</li>
           <li>A short-lived cookie while you sign in with Google or GitHub. It's deleted when sign-in finishes.</li>
           <li>
-            In your browser's local storage: reading activity not yet sent to us (so it isn't lost if you go
-            offline), and whether you last chose the PDF or HTML view.
+            In your browser: reading activity not yet sent to us, whether you last chose the PDF or HTML view, and
+            your light or dark theme.
           </li>
         </ul>
       </section>

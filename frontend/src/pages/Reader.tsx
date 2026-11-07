@@ -5,14 +5,18 @@ import { api, eventConfig, type Paper, type ReaderView, type Via } from "../api"
 import { type HtmlFailure, HtmlView } from "../components/HtmlView";
 import { PdfView } from "../components/PdfView";
 import { RatingStars } from "../components/RatingStars";
+import { ThemeToggle } from "../components/SiteFooter";
 import { StatusSelect } from "../components/StatusSelect";
 import { TagInput } from "../components/TagInput";
 import { authorLine, duration } from "../format";
+import { migrateKey } from "../storage";
+import { useTheme } from "../theme";
 import { deviceKind, sessionContext } from "../tracking/context";
 import { DwellTracker, pageUnits, type Units, type VisibleRange } from "../tracking/dwellTracker";
 
 const ZOOM_STEP = 0.15;
-const VIEW_KEY = "taste-reader:view"; // the view this browser last picked
+const VIEW_KEY = "researchmate:view"; // the view this browser last picked
+migrateKey("taste-reader:view", VIEW_KEY);
 
 /** The view to open papers in: the one picked last on this device, else HTML on phones. */
 function preferredView(): ReaderView {
@@ -207,7 +211,7 @@ export function Reader() {
   const onLoaded = useCallback((n: number) => setNumPages(n), []);
   const onPdfError = useCallback((m: string) => setError(`Couldn't load the PDF: ${m}`), []);
   const onCopy = useCallback((p: number | string | null, chars: number) => tracker.current?.copied(p, chars), []);
-  const theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  const [theme] = useTheme();
   const changeZoom = (next: number) => {
     const from = zoomRef.current;
     const to = Math.round(next * 100) / 100;
@@ -270,6 +274,7 @@ export function Reader() {
                 +
               </button>
             </span>
+            <ThemeToggle />
           </div>
         </div>
         {paper && (

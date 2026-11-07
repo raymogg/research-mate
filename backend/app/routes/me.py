@@ -94,7 +94,7 @@ def my_events(
 def export(db: Session = Depends(get_db), user: User = Depends(auth.export_user)):
     """Everything we hold about you, as one JSON document."""
     body = json.dumps(account.export(db, user), indent=1)
-    filename = f"taste-reader-{user.username}-{utcnow():%Y-%m-%d}.json"
+    filename = f"researchmate-{user.username}-{utcnow():%Y-%m-%d}.json"
     return Response(
         body,
         media_type="application/json",

@@ -1,6 +1,8 @@
 import type { ClientEvent, Paper } from "../api";
+import { migrateKey } from "../storage";
 
-const STORAGE_KEY = "taste-reader.pending-events";
+const STORAGE_KEY = "researchmate.pending-events";
+migrateKey("taste-reader.pending-events", STORAGE_KEY); // keep events queued before the rename
 const MAX_BATCH = 500;
 const MAX_KEEPALIVE_BATCH = 100; // keepalive bodies are capped at 64 KB
 
@@ -69,7 +71,7 @@ export class EventBuffer {
       const { papers } = (await res.json()) as { papers: Paper[] };
       if (papers.length) this.listeners.forEach((fn) => fn(papers));
     } catch (err) {
-      console.warn("[taste-reader] event flush failed, will retry", err);
+      console.warn("[researchmate] event flush failed, will retry", err);
     } finally {
       this.sending = false;
     }

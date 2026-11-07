@@ -30,7 +30,7 @@ from .catalog import CatalogPaper
 log = logging.getLogger(__name__)
 
 OAI_URL = "https://oaipmh.arxiv.org/oai"
-USER_AGENT = "taste-reader-collect/0.1 (personal research reader)"
+USER_AGENT = "researchmate-collect/0.1 (+https://researchmate.org)"
 EARLIEST = date(2005, 9, 16)
 UNSETTLED_DAYS = 2  # windows ending this close to today may still change
 RECHECK_S = 3 * 3600  # how often to fetch the recent days again

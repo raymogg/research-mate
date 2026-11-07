@@ -28,7 +28,7 @@ class Settings:
     # Send the login cookie over HTTPS only. Set in production.
     cookie_secure: bool = field(default_factory=lambda: _env("COOKIE_SECURE", "0") == "1")
     login_days: int = field(default_factory=lambda: int(_env("LOGIN_DAYS", "30")))
-    # Where browsers reach the app, e.g. https://taste-reader.fly.dev. OAuth
+    # Where browsers reach the app, e.g. https://researchmate.org. OAuth
     # redirect URIs are built from it; empty uses the request's own URL (dev).
     public_url: str = field(default_factory=lambda: _env("PUBLIC_URL", ""))
     # OAuth apps for "Sign in with Google / GitHub". A provider shows up once both are set.

@@ -54,6 +54,10 @@ Fly issues the certificates (`fly certs add researchmate.org` and
 | AAAA  | `@`   | `2a09:8280:1::1e1:4a04:0` |
 | CNAME | `www` | `taste-reader.fly.dev`    |
 
+The Fly app (and its volume, `taste_data`) keeps its original name, `taste-reader`,
+from before the rename to ResearchMate. Renaming it would mean a new app, a data
+move and a new CNAME, and users never see it.
+
 Check with `fly certs check researchmate.org` (and `www.researchmate.org`)
 until both say Issued. `fly ips list` shows the addresses if they change.
 

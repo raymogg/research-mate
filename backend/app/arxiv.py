@@ -25,7 +25,7 @@ EXPORT_TIMEOUT_S = 15
 PDF_BASE = "https://arxiv.org/pdf"
 HTML_BASE = "https://arxiv.org/html"
 HTML_TIMEOUT_S = 30
-USER_AGENT = "taste-reader/0.1 (personal research reader)"
+USER_AGENT = "researchmate/0.1 (+https://researchmate.org)"
 CHUNK = 256 * 1024
 
 _NEW_ID = r"\d{4}\.\d{4,5}"

@@ -65,7 +65,7 @@ export function Login({
   return (
     <div className="login">
       <form className="login-card" onSubmit={submit}>
-        <h1>Reading library</h1>
+        <h1>ResearchMate</h1>
         <p className="muted small">{signup ? "Create an account with your invite code." : "Sign in to continue."}</p>
         {signup && (
           <label>

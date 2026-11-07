@@ -1,7 +1,7 @@
 services:
   reader:
     build: .
-    image: taste-reader
+    image: researchmate
     ports:
       - "8000:8000"
     environment:

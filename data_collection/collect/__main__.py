@@ -10,7 +10,7 @@ fetch and embed are separate processes and can run at the same time; both
 write to DATA_DIR/catalog.db.
 
 Environment: DATA_DIR (./data), CATALOG_SETS (cs,stat,eess), FLY_APP
-(taste-reader), EMBED_BATCH (128, papers per GPU forward pass).
+(the Fly app, still named taste-reader), EMBED_BATCH (128, papers per GPU forward pass).
 """
 
 import argparse

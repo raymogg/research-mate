@@ -154,7 +154,10 @@ export function Library() {
     <div className="library">
       <header className="library-header">
         <div className="title-row">
-          <h1>Reading library</h1>
+          <div>
+            <div className="brand">ResearchMate</div>
+            <h1>Reading library</h1>
+          </div>
           <div className="account small">
             {user.is_admin && <Link to="/admin">Captured data →</Link>}
             <Link to="/profile" title="Your profile and data">
