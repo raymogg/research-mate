@@ -45,10 +45,12 @@ def iso(dt: datetime | None) -> str | None:
 
 class User(SQLModel, table=True):
     __tablename__ = "users"
+    # A deleted account's id is never handed out again, so copies kept outside the app can't mix two people.
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: int | None = Field(default=None, primary_key=True)
     username: str = Field(unique=True, index=True)  # stored lowercased
-    password_hash: str
+    password_hash: str  # "!" when the account signs in only through Google or GitHub
     is_admin: bool = False
     created_at: datetime = Field(default_factory=utcnow)
 
@@ -62,6 +64,45 @@ class Login(SQLModel, table=True):
     user_id: int = Field(foreign_key="users.id", index=True)
     created_at: datetime = Field(default_factory=utcnow)
     expires_at: datetime
+
+
+class Identity(SQLModel, table=True):
+    """A Google or GitHub account that signs in as a user."""
+
+    __tablename__ = "identities"
+
+    provider: str = Field(primary_key=True)  # "google" or "github"
+    subject: str = Field(primary_key=True)  # the provider's stable account id
+    user_id: int = Field(foreign_key="users.id", index=True)
+    email: str | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+    last_used_at: datetime = Field(default_factory=utcnow)
+
+
+class OAuthAttempt(SQLModel, table=True):
+    """A sign-in sent to a provider and not yet back. Used once, then deleted."""
+
+    __tablename__ = "oauth_attempts"
+
+    state_hash: str = Field(primary_key=True)
+    provider: str
+    mode: str  # "login", "signup" or "link"
+    verifier: str  # PKCE code verifier
+    user_id: int | None = None  # who is linking, for mode "link"
+    expires_at: datetime
+
+
+class ApiToken(SQLModel, table=True):
+    """A personal key for the export API. Shown once; we keep only its hash."""
+
+    __tablename__ = "api_tokens"
+
+    id: int | None = Field(default=None, primary_key=True)
+    token_hash: str = Field(unique=True, index=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    name: str
+    created_at: datetime = Field(default_factory=utcnow)
+    last_used_at: datetime | None = None
 
 
 class Paper(SQLModel, table=True):

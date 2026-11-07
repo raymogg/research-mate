@@ -1,7 +1,9 @@
-"""Username/password accounts, invite-code sign-up and cookie logins.
+"""Accounts, invite-code sign-up, cookie logins and export API tokens.
 
-Passwords are hashed with stdlib scrypt. The login cookie holds a random token;
-the database stores only its SHA-256, so a leaked database can't be replayed.
+Accounts sign in with a password, or with Google or GitHub (see oauth.py).
+Passwords are hashed with stdlib scrypt. The login cookie and API tokens are
+random; the database stores only their SHA-256, so a leaked database can't be
+replayed.
 """
 
 import hashlib
@@ -14,11 +16,13 @@ from fastapi import Depends, HTTPException, Request
 from sqlmodel import Session, select
 
 from .db import get_db
-from .models import Login, User, utcnow
+from .models import ApiToken, Login, User, utcnow
 
 COOKIE = "taste_login"
 USERNAME_RE = re.compile(r"^[a-z0-9_.-]{3,32}$")
 MIN_PASSWORD = 8
+NO_PASSWORD = "!"  # password_hash of accounts that sign in through a provider only
+TOKEN_PREFIX = "trk_"
 _SCRYPT = {"n": 2**14, "r": 8, "p": 1}
 
 
@@ -26,6 +30,10 @@ def hash_password(password: str) -> str:
     salt = secrets.token_bytes(16)
     digest = hashlib.scrypt(password.encode(), salt=salt, **_SCRYPT)
     return f"scrypt${salt.hex()}${digest.hex()}"
+
+
+def has_password(user: User) -> bool:
+    return user.password_hash.startswith("scrypt$")
 
 
 def check_password(password: str, stored: str) -> bool:
@@ -66,6 +74,24 @@ def create_user(db: Session, username: str, password: str, is_admin: bool = Fals
     return user
 
 
+def free_username(db: Session, hint: str) -> str:
+    """A valid, unused username close to `hint` (a GitHub login or an email's local part)."""
+    base = re.sub(r"[^a-z0-9_.-]+", "-", hint.strip().lower()).strip("-.")[:28] or "reader"
+    base = base if len(base) >= 3 else f"{base}-reader"
+    name, n = base, 1
+    while db.exec(select(User).where(User.username == name)).first():
+        n += 1
+        name = f"{base}-{n}"
+    return name
+
+
+def create_provider_user(db: Session, hint: str) -> User:
+    user = User(username=free_username(db, hint), password_hash=NO_PASSWORD)
+    db.add(user)
+    db.flush()  # assigns the id; the caller commits with the identity
+    return user
+
+
 def authenticate(db: Session, username: str, password: str) -> User | None:
     user = db.exec(select(User).where(User.username == username.strip().lower())).first()
     ok = check_password(password, user.password_hash if user else _DUMMY_HASH)
@@ -103,6 +129,40 @@ def current_user(request: Request, db: Session = Depends(get_db)) -> User:
     if user is None:
         raise HTTPException(401, "Sign in required")
     return user
+
+
+def create_api_token(db: Session, user: User, name: str) -> tuple[str, ApiToken]:
+    token = TOKEN_PREFIX + secrets.token_urlsafe(32)
+    row = ApiToken(token_hash=_token_hash(token), user_id=user.id, name=name)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return token, row
+
+
+def user_for_api_token(db: Session, token: str) -> User | None:
+    row = db.exec(select(ApiToken).where(ApiToken.token_hash == _token_hash(token))).first()
+    if row is None:
+        return None
+    row.last_used_at = utcnow()
+    db.add(row)
+    db.commit()
+    return db.get(User, row.user_id)
+
+
+def export_user(request: Request, db: Session = Depends(get_db)) -> User:
+    """The signed-in user, or the owner of the API token in `Authorization: Bearer`.
+
+    Only the export endpoints accept tokens; everything else needs the cookie.
+    """
+    header = request.headers.get("authorization", "")
+    if header:
+        scheme, _, token = header.partition(" ")
+        user = user_for_api_token(db, token.strip()) if scheme.lower() == "bearer" else None
+        if user is None:
+            raise HTTPException(401, "Invalid or revoked API token", headers={"WWW-Authenticate": "Bearer"})
+        return user
+    return current_user(request, db)
 
 
 def admin_user(user: User = Depends(current_user)) -> User:

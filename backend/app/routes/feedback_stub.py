@@ -10,7 +10,7 @@ from ..models import iso, utcnow
 
 router = APIRouter(prefix="/feedback")
 
-_lock = threading.Lock()
+lock = threading.Lock()  # also held by account.purge_feedback_log
 
 
 class FeedbackBatch(BaseModel):
@@ -37,7 +37,7 @@ def receive(body: FeedbackBatch, request: Request):
     state = request.app.state
     path = state.settings.feedback_log
     accepted = []
-    with _lock:
+    with lock:
         if state.feedback_seen is None:
             state.feedback_seen = _load_seen(path)
         seen = state.feedback_seen

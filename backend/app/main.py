@@ -1,14 +1,15 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from urllib.parse import urlsplit
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, RedirectResponse
 
 from .config import Settings
 from .db import make_engine
 from .events import Sender, http_sender
-from .routes import admin, auth, events, feedback_stub, paper_feedback, papers, tags
+from .routes import admin, auth, events, feedback_stub, me, oauth, paper_feedback, papers, tags
 from .routes.common import forward_now
 
 logging.basicConfig(level=logging.INFO)
@@ -38,7 +39,22 @@ def create_app(settings: Settings | None = None, feedback_sender: Sender | None 
     app.state.feedback_sender = feedback_sender or http_sender(settings)
     app.state.feedback_seen = None
 
+    canonical = urlsplit(settings.public_url)
+    if canonical.hostname:
+
+        @app.middleware("http")
+        async def canonical_host(request: Request, call_next):
+            # One host for everyone: session and OAuth cookies only work on the host that set them.
+            # Health checks reach the machine by its own address and aren't redirected.
+            host = (request.url.hostname or "").lower()
+            if host != canonical.hostname and (host == f"www.{canonical.hostname}" or host.endswith(".fly.dev")):
+                target = request.url.replace(scheme=canonical.scheme, netloc=canonical.netloc)
+                return RedirectResponse(str(target), status_code=308)
+            return await call_next(request)
+
     app.include_router(auth.router)
+    app.include_router(oauth.router)
+    app.include_router(me.router)
     app.include_router(papers.router)
     app.include_router(tags.router)
     app.include_router(paper_feedback.router)

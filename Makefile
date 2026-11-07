@@ -15,7 +15,7 @@ dev:
 	wait
 
 backend:
-	cd backend && DATA_DIR=../data INVITE_CODE=$(INVITE_CODE) uv run uvicorn app.main:create_app --factory --reload --port 8000
+	cd backend && DATA_DIR=../data INVITE_CODE=$(INVITE_CODE) PUBLIC_URL=http://localhost:5173 uv run uvicorn app.main:create_app --factory --reload --port 8000
 
 frontend:
 	cd frontend && npm run dev
